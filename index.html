@@ -3,59 +3,77 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CV - Wissal</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'">
+  <meta name="referrer" content="no-referrer">
+  <title>Wissal Elkouk | DevSecOps Portfolio</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main class="cv">
-    <header>
-      <img src="photo.jpg" alt="Photo de Wissal" class="photo">
-      <div class="infos">
+  <header class="nav">
+    <a href="#about" class="logo">&lt;WE/&gt;</a>
+    <nav>
+      <a href="#about">About</a>
+      <a href="#skills">Skills</a>
+      <a href="#projects">Projects</a>
+      <a href="#experience">Experience</a>
+      <a href="#contact">Contact</a>
+    </nav>
+    <button id="theme" type="button" aria-label="Changer de thème">Thème</button>
+  </header>
+
+  <main>
+    <section id="about" class="hero">
+      <img src="photo.jpg" alt="Photo de Wissal Elkouk" class="photo">
+      <div>
+        <p class="tag">DevSecOps Portfolio</p>
         <h1>Wissal Elkouk</h1>
-        <p class="titre">Étudiante en master DevOps Cloud</p>
-        <p class="contact">wissalelkouk@gmail.com · Tunis, Tunisie · github.com/wissalelkouk</p>
+        <p class="role">Étudiante en master DevOps Cloud</p>
+        <p>Passionnée par l'automatisation, la sécurité des systèmes, le réseau et services informatique et les infrastructures cloud. J'apprends à construire, sécuriser et déployer des applications avec Linux, Docker, et Git.</p>
+        <a class="btn" href="#contact">Me contacter</a>
       </div>
-      <button id="theme" type="button">Mode sombre</button>
-    </header>
-
-    <section>
-      <h2>Profil</h2>
-      <p>Étudiante motivée, intéressée par l'administration système,Réseau et services informatique,CyberSecurity,DevOps et le développement web.</p>
     </section>
 
-    <section>
-      <h2>Formation</h2>
-      <ul>
-        <li><strong>2023 - 2025</strong> : Licence en réseau et services informatique, iset Tozeur</li>
-      </ul>
+    <section id="skills">
+      <h2>Skills</h2>
+      <div class="grid">
+        <article class="card"><h3>DevOps</h3><ul class="chips"><li>Docker</li><li>Jenkins (CI/CD)</li><li>Git / GitHub</li><li>automatisation</li><li>Services Cloud</li></ul></article>
+        <article class="card"><h3>Sécurité</h3><ul class="chips"><li>SSH par clé</li><li>SIEM (Security Oion, Splunk)</li><li>CyberSecurity</li></ul></article>
+        <article class="card"><h3>Systèmes &amp; réseaux</h3><ul class="chips"><li>Linux (Ubuntu Server)</li><li>Hyper-V</li><li>virtualbox</li><li>Vmware</li><li>Réseaux et services</li></ul></article>
+        <article class="card"><h3>Web</h3><ul class="chips"><li>HTML5</li><li>CSS3</li><li>JavaScript</li></ul></article>
+      </div>
     </section>
 
-    <section>
-      <h2>Compétences</h2>
-      <ul class="tags">
-        <li>Linux </li>
-        <li>sécurité informatique</li>
-        <li>Docker</li>
-        <li>réseau et services informatique</li>
-        <li>Git / GitHub</li>
-        <li>HTML / CSS / JavaScript</li>
-      </ul>
+    <section id="projects">
+      <h2>Projects</h2>
+      <div class="grid">
+        <article class="card"><h3>Infrastructure DevOps</h3><p>VM Ubuntu Server 26.04 sous Hyper-V, accès SSH par clé, pare-feu UFW, Docker.</p></article>
+        <article class="card"><h3>Pipeline Jenkins</h3><p>Jenkins installé en service et accessible depuis la machine physique.</p></article>
+        <article class="card"><h3>Portfolio versionné</h3><p>Site HTML5 / CSS3 / JavaScript géré avec Git, poussé sur GitHub via SSH.</p></article>
+	<article class="card"><h3>Projet PFE</h3><p>mise en place d'un systéme de Gestion des informations et des événements de sécurité(SIEM & Splunk) pour la la détection des menaces et la réponse aux incidents en agrégeant et en analysant des données provenant de différentes sources..</p></article>
+      </div>
     </section>
 
-    <section>
-      <h2>Projets</h2>
-      <ul>
-        <li><strong>TP DevOps</strong> : VM Ubuntu Server, accès SSH par clé, Docker et Jenkins.</li>
-        <li><strong>Mini CV</strong> : page HTML5 / CSS3 / JavaScript versionnée avec Git.</li>
- 	<li><strong>projet PFE</strong> : Security information and event managementc(SIEM)/ Security Onion / Splunk / gestion des événements de sécurité /  analyse en temps réel des alertes de sécurité générées par les applications et le matériel réseau.</li>
-      </ul>
+    <section id="experience">
+      <h2>Experience</h2>
+      <ol class="timeline">
+        <li><strong>2025 - présent</strong><span>Master DevOps Cloud</span></li>
+        <li><strong>2023 - 2025</strong><span>Licence en réseau et services informatiques, ISET Tozeur</span></li>
+        <li><strong>2026</strong><span>Travaux pratiques DevOps : Ubuntu, SSH, Docker, Jenkins, GitHub</span></li>
+      </ol>
     </section>
 
-    <section>
-      <h2>Langues</h2>
-      <p>Arabe (langue maternelle) · Français · Anglais</p>
+    <section id="contact">
+      <h2>Contact</h2>
+      <p>wissalelkouk@gmail.com · Tunis, Tunisie · <a href="https://github.com/wissalelkouk" rel="noopener noreferrer">github.com/wissalelkouk</a></p>
+      <form id="form">
+        <input id="nom" placeholder="Votre nom" maxlength="60" required>
+        <textarea id="msg" placeholder="Votre message" maxlength="500" required></textarea>
+        <button class="btn" type="submit">Envoyer</button>
+      </form>
     </section>
   </main>
+
+  <footer>© <span id="annee"></span> Wissal Elkouk · DevSecOps Portfolio</footer>
   <script src="script.js"></script>
 </body>
 </html>
