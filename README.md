@@ -16,3 +16,4 @@ Puis ouvrir `http://IP_DE_LA_VM:8000`.
 
 ## Capture d'écran
 ![CV](cv.png)
+
