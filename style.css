@@ -42,3 +42,12 @@ footer { margin-top: 48px; padding: 20px; text-align: center; color: var(--muted
   .hero { flex-direction: column; text-align: center; }
   .nav { flex-wrap: wrap; justify-content: center; }
 }
+
+/* Section DevSecOps Skills */
+.muted { color: var(--muted); margin-top: 0; }
+.tech { display: flex; flex-direction: column; gap: 6px; }
+.tech h3 { margin: 0; }
+.ico { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 10px; background: var(--accent); color: var(--bg); font-weight: 700; }
+.badge { align-self: flex-start; margin-top: auto; padding: 2px 10px; border-radius: 12px; font-size: 0.8rem; border: 1px solid var(--line); }
+.badge.ok { border-color: var(--accent); color: var(--accent); }
+.badge.learn { color: var(--muted); }
