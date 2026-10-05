@@ -1,28 +1,8 @@
-const racine = document.documentElement;
+#!/usr/bin/env python3
+"""Étape 9 : la section Projects est générée en JavaScript à partir d'un tableau d'objets."""
+import re
 
-// Thème clair / sombre mémorisé dans le navigateur
-try {
-  const saved = localStorage.getItem("theme");
-  if (saved) racine.dataset.theme = saved;
-} catch (e) { /* stockage indisponible */ }
-
-document.getElementById("theme").addEventListener("click", () => {
-  const next = racine.dataset.theme === "light" ? "dark" : "light";
-  racine.dataset.theme = next;
-  try { localStorage.setItem("theme", next); } catch (e) { /* ignoré */ }
-});
-
-// Formulaire de contact : ouvre le client mail (aucune donnée envoyée à un serveur)
-document.getElementById("form").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const nom = document.getElementById("nom").value.trim();
-  const msg = document.getElementById("msg").value.trim();
-  const sujet = encodeURIComponent("Contact portfolio : " + nom);
-  window.location.href = "mailto:wissalelkouk@gmail.com?subject=" + sujet + "&body=" + encodeURIComponent(msg);
-});
-
-document.getElementById("annee").textContent = new Date().getFullYear();
-
+JS = """
 // Étape 9 : section Projects générée dynamiquement à partir d'un tableau d'objets
 const projets = [
   {
@@ -86,3 +66,27 @@ function creerCarte(projet) {
 
 const conteneurProjets = document.getElementById("projects-list");
 projets.forEach((projet) => conteneurProjets.appendChild(creerCarte(projet)));
+"""
+
+CSS = """
+/* Étape 9 : cartes Projects générées en JavaScript */
+.projet { display: flex; flex-direction: column; gap: 8px; }
+.projet h3 { margin: 0; }
+.projet a { margin-top: auto; font-size: 0.9rem; }
+"""
+
+html = open("index.html", encoding="utf-8").read()
+if 'id="projects-list"' in html:
+    print("L'étape 9 est déjà appliquée : rien à faire.")
+else:
+    nouveau, n = re.subn(
+        r'(<section id="projects">\s*<h2>Projects</h2>\s*)<div class="grid">.*?</div>(\s*</section>)',
+        r'\1<div class="grid" id="projects-list"></div>\2',
+        html, count=1, flags=re.DOTALL)
+    assert n == 1, "Section Projects introuvable dans index.html"
+    open("index.html", "w", encoding="utf-8").write(nouveau)
+    with open("script.js", "a", encoding="utf-8") as f:
+        f.write(JS)
+    with open("style.css", "a", encoding="utf-8") as f:
+        f.write(CSS)
+    print("Section Projects dynamique ajoutée.")

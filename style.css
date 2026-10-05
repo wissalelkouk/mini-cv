@@ -51,3 +51,8 @@ footer { margin-top: 48px; padding: 20px; text-align: center; color: var(--muted
 .badge { align-self: flex-start; margin-top: auto; padding: 2px 10px; border-radius: 12px; font-size: 0.8rem; border: 1px solid var(--line); }
 .badge.ok { border-color: var(--accent); color: var(--accent); }
 .badge.learn { color: var(--muted); }
+
+/* Étape 9 : cartes Projects générées en JavaScript */
+.projet { display: flex; flex-direction: column; gap: 8px; }
+.projet h3 { margin: 0; }
+.projet a { margin-top: auto; font-size: 0.9rem; }
