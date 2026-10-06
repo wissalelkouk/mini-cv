@@ -1,8 +1,10 @@
 # DevSecOps Portfolio
 
-Évolution du mini CV en petit portfolio HTML5 / CSS3 / JavaScript, versionné avec Git et publié sur GitHub.
+**Wissal Elkouk** - étudiante en master DevOps Cloud
 
-## Capture d'écran
+Dans ce projet, j'ai fait évoluer mon mini CV en un petit portfolio DevSecOps en HTML5, CSS3 et JavaScript. Le code est versionné avec Git et publié sur GitHub, et le site est servi par Nginx dans un conteneur Docker.
+
+## Capture d'écran de la nouvelle version
 
 **1. En-tête et About**
 
@@ -16,23 +18,34 @@
 
 ![Portfolio - partie 3](portfolio-3.png)
 
-## Sections
+## Sections du portfolio
 
-About · Skills · Projects · Experience · Contact
+About, Skills, DevSecOps Skills, Projects, Experience, Contact.
 
-## Section DevSecOps Skills (étape 8)
+## Principales améliorations
 
-Une section **DevSecOps Skills** affiche les technologies de la chaîne DevSecOps : Git, Docker, Jenkins, Kubernetes, Ansible, Terraform et Argo CD.
+- Le CV d'une page est devenu un portfolio avec une barre de navigation et un défilement fluide vers chaque section.
+- J'ai classé mes compétences par catégories : DevOps, Sécurité, Systèmes et réseaux, Web.
+- Les projets sont présentés sous forme de cartes, et l'expérience sous forme de frise chronologique.
+- J'ai ajouté un mode sombre et un mode clair, mémorisé dans le navigateur.
+- Le site est responsive : il s'adapte aux écrans de téléphone.
+- Le formulaire de contact ouvre le client mail, sans envoyer de données à un serveur.
+- J'ai ajouté des protections de sécurité :
+  - une politique `Content-Security-Policy` qui n'autorise que les scripts et styles du site ;
+  - des liens externes avec `rel="noopener noreferrer"` ;
+  - aucun mot de passe ni token dans le dépôt, avec un push par clé SSH.
 
-- Chaque technologie est présentée sous forme de carte, avec une courte description.
-- Un badge distingue ce qui a été **utilisé dans le projet** (Git, Docker, Jenkins) de ce qui est **en apprentissage** (Kubernetes, Ansible, Terraform, Argo CD).
-- Un lien **DevSecOps** a été ajouté à la barre de navigation.
+## Étape 8 : section DevSecOps Skills
+
+J'ai ajouté une section **DevSecOps Skills** qui affiche les technologies de la chaîne DevSecOps : Git, Docker, Jenkins, Kubernetes, Ansible, Terraform et Argo CD.
+
+Chaque technologie est une carte avec une courte description. Un badge indique ce que j'ai **utilisé dans le projet** (Git, Docker, Jenkins), ce que je maîtrise déjà (**compétence acquise** : Kubernetes) et ce que je suis encore **en train d'apprendre** (Ansible, Terraform, Argo CD). J'ai aussi ajouté un lien « DevSecOps » dans le menu.
 
 ![Section DevSecOps Skills](portfolio-devsecops.png)
 
-## Section Projects dynamique (étape 9)
+## Étape 9 : section Projects générée en JavaScript
 
-La section **Projects** n'est plus écrite à la main en HTML : elle est **générée en JavaScript** à partir d'un tableau d'objets. Pour ajouter un projet, il suffit d'ajouter un objet au tableau.
+Au lieu d'écrire mes projets à la main en HTML, je les ai mis dans un **tableau d'objets** en JavaScript. Une fonction crée une carte pour chaque objet et l'affiche dans la page. Pour ajouter un projet, il me suffit d'ajouter un objet au tableau.
 
 Extrait de `script.js` :
 
@@ -57,7 +70,7 @@ function creerCarte(projet) {
 
   const titre = document.createElement("h3");
   titre.textContent = projet.titre;
-  // ... description, technologies et lien sont créés de la même façon
+  // ... la description, les technologies et le lien sont créés de la même façon
 
   carte.append(titre, description, tags);
   return carte;
@@ -67,39 +80,48 @@ const conteneurProjets = document.getElementById("projects-list");
 projets.forEach((projet) => conteneurProjets.appendChild(creerCarte(projet)));
 ```
 
-Les cartes sont construites avec `createElement` et `textContent`, sans `innerHTML` : le texte est traité comme du texte et non comme du HTML, ce qui évite l'injection de code. Le lien n'est affiché que s'il commence par `https://`.
+J'ai utilisé `createElement` et `textContent` plutôt que `innerHTML`, pour que le texte soit traité comme du texte et non comme du HTML (cela évite l'injection de code).
 
 ![Section Projects générée en JavaScript](portfolio-projects.png)
 
-## Principales améliorations
+## Étape 10 : Dockerfile avec Nginx
 
-- **Structure multi-sections** : le CV d'une page devient un portfolio avec barre de navigation fixe et défilement fluide vers chaque section.
-- **Compétences par catégories** : DevOps, Sécurité, Systèmes et réseaux, Web.
-- **Projets** présentés sous forme de cartes (infrastructure, Jenkins, portfolio).
-- **Parcours (Experience)** sous forme de frise chronologique.
-- **Thème sombre ou clair**, mémorisé dans le navigateur.
-- **Design responsive** : la page s'adapte aux écrans de téléphone.
-- **Formulaire de contact** qui ouvre le client mail, sans envoyer de données à un serveur.
-- **Approche sécurité (DevSecOps)** :
-  - politique `Content-Security-Policy` : seuls les scripts et styles du site sont autorisés, pas de script en ligne ;
-  - `referrer` désactivé ;
-  - liens externes avec `rel="noopener noreferrer"` ;
-  - champs du formulaire limités en longueur ;
-  - aucun secret ni token dans le dépôt, push via clé SSH.
+J'ai créé un `Dockerfile` pour servir mon portfolio avec Nginx dans un conteneur.
 
-## Lancer le site
+```dockerfile
+FROM nginx:alpine
+COPY index.html style.css script.js photo.jpg /usr/share/nginx/html/
+EXPOSE 80
+```
+
+**Explication :**
+
+- `FROM nginx:alpine` : je pars de l'image officielle de Nginx basée sur Alpine Linux. Elle est très légère, ce qui réduit aussi la surface d'attaque.
+- `COPY ...` : je copie seulement les fichiers du site dans le dossier que Nginx sert par défaut (`/usr/share/nginx/html/`). Les captures, le README et le dossier `.git` ne sont pas dans l'image, grâce au fichier `.dockerignore`.
+- `EXPOSE 80` : le conteneur écoute sur le port 80.
+- Je n'ai pas besoin de commande de démarrage, car l'image Nginx lance déjà le serveur.
+
+**Construire et lancer le conteneur :**
 
 ```bash
-cd ~/mini-cv
+docker build -t devsecops-portfolio .
+docker run -d --name portfolio -p 8081:80 devsecops-portfolio
+```
+
+J'ai utilisé le port 8081 de la VM, car le port 8080 est déjà pris par Jenkins. Le site est accessible sur `http://IP_DE_LA_VM:8081`.
+
+## Lancer le site sans Docker
+
+```bash
 python3 -m http.server 8000
 ```
 
-Puis ouvrir `http://IP_DE_LA_VM:8000`.
+Puis j'ouvre `http://IP_DE_LA_VM:8000` dans le navigateur.
 
 ## Commandes Git utilisées
 
 ```bash
 git add .
-git commit -m "Évolution du mini CV en DevSecOps Portfolio"
+git commit -m "Message du commit"
 git push
 ```
