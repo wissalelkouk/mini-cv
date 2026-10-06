@@ -110,6 +110,36 @@ docker run -d --name portfolio -p 8081:80 devsecops-portfolio
 
 J'ai utilisé le port 8081 de la VM, car le port 8080 est déjà pris par Jenkins. Le site est accessible sur `http://IP_DE_LA_VM:8081`.
 
+## Étape 11 : image Docker `cv-docker`
+
+J'ai construit l'image Docker à partir du `Dockerfile` de l'étape 10, en la nommant `cv-docker`.
+
+**Commande utilisée :**
+
+```bash
+docker build -t cv-docker .
+```
+
+- `docker build` construit une image à partir d'un Dockerfile.
+- `-t cv-docker` donne le nom (le « tag ») `cv-docker` à l'image.
+- Le point `.` indique que le Dockerfile et les fichiers du site sont dans le dossier courant.
+
+Pour vérifier que l'image existe :
+
+```bash
+docker images cv-docker
+```
+
+**Capture d'écran du résultat :**
+
+Construction de l'image : la ligne `naming to docker.io/library/cv-docker:latest` confirme que l'image s'appelle bien `cv-docker`.
+
+![Construction de l'image cv-docker](cv-docker-build.png)
+
+Vérification avec `docker images cv-docker` : l'image `cv-docker:latest` existe (environ 94 Mo sur le disque).
+
+![Image cv-docker dans docker images](cv-docker-images.png)
+
 ## Lancer le site sans Docker
 
 ```bash
