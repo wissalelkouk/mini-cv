@@ -172,6 +172,53 @@ Le conteneur `cv-portfolio` est en marche (`Up`) et le port 8081 de la VM est re
 
 ![Portfolio affiché depuis la machine physique](portfolio-8081.png)
 
+## Étape 13 : déploiement avec Docker Compose
+
+J'ai déployé le portfolio avec Docker Compose. Au lieu de la longue commande `docker run`, les réglages sont écrits dans un fichier `docker-compose.yml`, et une seule commande lance tout.
+
+**Fichier `docker-compose.yml` :**
+
+```yaml
+services:
+  portfolio:
+    build: .
+    image: cv-docker
+    container_name: cv-compose
+    ports:
+      - "8082:80"
+    restart: unless-stopped
+```
+
+- `build: .` et `image: cv-docker` : le service utilise l'image `cv-docker` (construite à partir du Dockerfile si elle n'existe pas).
+- `container_name: cv-compose` : le nom du conteneur.
+- `ports: "8082:80"` : le port 8082 de la VM est relié au port 80 de Nginx. J'ai pris le 8082 parce que le 8081 est déjà utilisé par le conteneur de l'étape 12.
+- `restart: unless-stopped` : le conteneur redémarre tout seul avec la VM.
+
+**Commande utilisée :**
+
+```bash
+docker compose up -d
+```
+
+`up` crée et démarre les conteneurs décrits dans le fichier, et `-d` les lance en arrière-plan.
+
+![Commande docker compose up -d](compose-up.png)
+
+**Résultat de `docker compose ps` :**
+
+```
+NAME         IMAGE       COMMAND                  SERVICE     CREATED          STATUS          PORTS
+cv-compose   cv-docker   "/docker-entrypoint.…"   portfolio   15 seconds ago   Up 14 seconds   0.0.0.0:8082->80/tcp, [::]:8082->80/tcp
+```
+
+Le service `portfolio` tourne dans le conteneur `cv-compose` (statut `Up`), et le port 8082 de la VM est relié au port 80.
+
+![Résultat de docker compose ps](compose-ps.png)
+
+**Capture d'écran :** le portfolio est accessible depuis la machine physique à l'adresse `http://172.25.127.242:8082`.
+
+![Portfolio déployé avec Docker Compose](portfolio-8082.png)
+
 ## Lancer le site sans Docker
 
 ```bash
