@@ -219,6 +219,35 @@ Le service `portfolio` tourne dans le conteneur `cv-compose` (statut `Up`), et l
 
 ![Portfolio déployé avec Docker Compose](portfolio-8082.png)
 
+## Étape 14 : publication des modifications sur GitHub via SSH
+
+J'ai publié toutes les modifications du projet (Dockerfile, `docker-compose.yml`, README et captures) sur GitHub en utilisant ma clé SSH, sans mot de passe ni token.
+
+**Commandes Git utilisées :**
+
+```bash
+cd ~/mini-cv
+ssh -T git@github.com
+git remote -v
+git status
+git add .
+git commit -m "Etape 14 : publication des modifications via SSH"
+git push
+git log --oneline -5
+```
+
+- `ssh -T git@github.com` : teste que GitHub reconnaît ma clé SSH.
+- `git remote -v` : vérifie que le dépôt utilise bien l'adresse SSH `git@github.com:wissalelkouk/mini-cv.git`.
+- `git status` : liste les fichiers modifiés ou nouveaux.
+- `git add .` : prépare tous les changements pour le commit.
+- `git commit -m "..."` : enregistre les changements avec un message.
+- `git push` : envoie les commits vers GitHub, par SSH.
+- `git log --oneline -5` : affiche les derniers commits pour vérifier.
+
+**Lien du dépôt GitHub mis à jour :**
+
+https://github.com/wissalelkouk/mini-cv
+
 ## Lancer le site sans Docker
 
 ```bash
