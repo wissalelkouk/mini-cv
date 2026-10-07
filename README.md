@@ -140,6 +140,38 @@ Vérification avec `docker images cv-docker` : l'image `cv-docker:latest` existe
 
 ![Image cv-docker dans docker images](cv-docker-images.png)
 
+## Étape 12 : exécuter le conteneur et accéder au portfolio
+
+J'ai lancé un conteneur à partir de l'image `cv-docker` en exposant le portfolio sur le port 8081 de la VM.
+
+**Commande `docker run` :**
+
+```bash
+docker run -d --name cv-portfolio -p 8081:80 cv-docker
+```
+
+- `-d` : le conteneur tourne en arrière-plan.
+- `--name cv-portfolio` : je donne un nom au conteneur.
+- `-p 8081:80` : le port 8081 de la VM est relié au port 80 de Nginx dans le conteneur. J'ai pris le 8081 parce que le 8080 est déjà utilisé par Jenkins.
+- `cv-docker` : l'image construite à l'étape 11.
+
+![Commande docker run](docker-run.png)
+
+**Résultat de `docker ps` :**
+
+```
+CONTAINER ID   IMAGE       COMMAND                  CREATED         STATUS         PORTS                                     NAMES
+05c68f7fbd00   cv-docker   "/docker-entrypoint.…"   9 seconds ago   Up 9 seconds   0.0.0.0:8081->80/tcp, [::]:8081->80/tcp   cv-portfolio
+```
+
+Le conteneur `cv-portfolio` est en marche (`Up`) et le port 8081 de la VM est relié au port 80 du conteneur.
+
+![Résultat de docker ps](docker-ps.png)
+
+**Vérification depuis la machine physique :** dans le navigateur de Windows, j'ai ouvert `http://172.25.127.242:8081`. Le portfolio s'affiche, servi par Nginx depuis le conteneur.
+
+![Portfolio affiché depuis la machine physique](portfolio-8081.png)
+
 ## Lancer le site sans Docker
 
 ```bash
