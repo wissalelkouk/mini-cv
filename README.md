@@ -248,6 +248,178 @@ git log --oneline -5
 
 https://github.com/wissalelkouk/mini-cv
 
+## Étape 15 : installer Vagrant et créer une première VM
+
+Pour automatiser la création de machines virtuelles, j'ai installé **Vagrant** dans ma VM Ubuntu Server. Vagrant crée une VM à partir d'un fichier texte, le `Vagrantfile`, avec une seule commande.
+
+Ma VM tourne déjà dans Hyper-V : la VM créée par Vagrant est donc une VM dans une VM (virtualisation imbriquée). J'ai activé l'option côté Hyper-V (VM éteinte, PowerShell en administrateur) :
+
+```powershell
+Set-VMProcessor -VMName "ubuntu server 26" -ExposeVirtualizationExtensions $true
+```
+
+**Vérification des ressources (RAM, disque, virtualisation) :**
+
+```bash
+free -h
+df -h /
+nproc
+ls -l /dev/kvm
+```
+
+**Installation de Vagrant** (dépôt officiel HashiCorp) :
+
+```bash
+wget -qO- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com noble main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+sudo apt update
+sudo apt install -y vagrant
+vagrant --version
+```
+
+Résultat : `Vagrant 2.4.9`. J'ai utilisé le dépôt `noble` (Ubuntu 24.04) car HashiCorp ne propose pas encore de paquets pour Ubuntu 26.04.
+
+**Installation de KVM, libvirt et du plugin Vagrant :**
+
+```bash
+sudo apt install -y qemu-system-x86 libvirt-daemon-system libvirt-clients libvirt-dev \
+  build-essential ruby-dev libxslt-dev libxml2-dev zlib1g-dev pkg-config dnsmasq-base
+sudo usermod -aG libvirt,kvm $USER
+vagrant plugin install vagrant-libvirt
+export VAGRANT_DEFAULT_PROVIDER=libvirt
+```
+
+J'ai choisi KVM avec libvirt plutôt que VirtualBox : KVM fait partie du noyau Linux, alors que VirtualBox doit compiler un module pour le noyau de ma VM.
+
+**Premier `Vagrantfile` :**
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "alvistack/ubuntu-24.04"
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  config.vm.provider :libvirt do |libvirt|
+    libvirt.driver = "kvm"
+    libvirt.memory = 1024
+    libvirt.cpus = 1
+  end
+end
+```
+
+- `config.vm.box` : l'image Ubuntu Server utilisée comme point de départ.
+- `synced_folder ... disabled: true` : désactive le partage de dossier avec la VM, inutile ici.
+- `libvirt.memory` et `libvirt.cpus` : 1 Go de RAM et 1 processeur pour la VM Vagrant.
+
+**Commande pour créer la VM :**
+
+```bash
+mkdir ~/vagrant-ubuntu && cd ~/vagrant-ubuntu
+vagrant up
+```
+
+La première fois, Vagrant télécharge la box, puis crée et démarre la VM.
+
+![Commande vagrant up](vagrant-up.png)
+
+## Étape 16 : connexion à la VM avec `vagrant ssh`
+
+Depuis la VM principale, dans le dossier du projet :
+
+```bash
+vagrant ssh
+```
+
+Résultat : l'invite change et devient `vagrant@ubuntu:~$`. Je suis dans la VM créée par Vagrant. Pour le vérifier, j'ai affiché sa mémoire :
+
+```
+vagrant@ubuntu:~$ free -h
+               total        used        free      shared  buff/cache   available
+Mem:           962Mi       317Mi       595Mi       2.4Mi       192Mi       644Mi
+```
+
+La VM a bien 1 Go de RAM, comme dans le Vagrantfile. Je sors avec `exit`.
+
+![Connexion avec vagrant ssh](vagrant-ssh.png)
+
+**Comparaison avec la création manuelle de la VM :**
+
+| Critère | VM créée à la main (Hyper-V) | VM créée avec Vagrant |
+|---|---|---|
+| Création | Plusieurs étapes dans l'interface, puis l'installateur d'Ubuntu | Une commande : `vagrant up` |
+| Durée | Environ 20 à 30 minutes | Quelques minutes, surtout le téléchargement de la box |
+| Reproductibilité | Les réglages dépendent de ce dont je me souviens | Le `Vagrantfile` décrit tout et peut être versionné avec Git |
+| Risque d'erreur | Oublis possibles (RAM, ISO, SSH, clavier) | Résultat identique à chaque lancement |
+| Accès | Configurer SSH, l'utilisateur et le mot de passe | `vagrant ssh`, sans rien configurer |
+| Suppression | Manuelle | `vagrant destroy` |
+
+La création manuelle donne plus de contrôle, par exemple sur le partitionnement. Vagrant est bien plus rapide et reproductible, ce qui convient à l'automatisation.
+
+## Étape 17 : configuration automatique de la VM
+
+J'ai modifié le `Vagrantfile` pour fixer le nom de la VM, son adresse IP privée, sa mémoire et son nombre de processeurs :
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "alvistack/ubuntu-24.04"
+  config.vm.define "ubuntu-tp"
+  config.vm.hostname = "ubuntu-tp"
+  config.vm.network "private_network", ip: "192.168.56.10"
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  config.vm.provider :libvirt do |libvirt|
+    libvirt.driver = "kvm"
+    libvirt.memory = 1536
+    libvirt.cpus = 2
+  end
+end
+```
+
+- `config.vm.define "ubuntu-tp"` et `config.vm.hostname` : le nom de la VM.
+- `config.vm.network "private_network", ip: ...` : l'adresse IP privée `192.168.56.10`.
+- `libvirt.memory = 1536` : 1,5 Go de RAM.
+- `libvirt.cpus = 2` : deux processeurs.
+
+J'ai supprimé l'ancienne VM puis recréé la nouvelle :
+
+```bash
+vagrant destroy -f
+vagrant up
+vagrant status
+```
+
+Fin de `vagrant up` :
+
+```
+==> ubuntu-tp: Machine booted and ready!
+==> ubuntu-tp: Setting hostname...
+==> ubuntu-tp: Configuring and enabling network interfaces...
+```
+
+Résultat de `vagrant status` :
+
+```
+Current machine states:
+
+ubuntu-tp                 running (libvirt)
+```
+
+Pour vérifier que les réglages sont appliqués, j'ai interrogé la VM :
+
+```bash
+vagrant ssh -c "hostname; ip -4 a show | grep inet; free -h | head -2; nproc"
+```
+
+```
+ubuntu-tp
+    inet 192.168.121.123/24 ... scope global dynamic eth0
+    inet 192.168.56.10/24 brd 192.168.56.255 scope global eth1
+               total        used        free      shared  buff/cache   available
+Mem:           1.4Gi       336Mi       1.1Gi       2.4Mi       194Mi       1.1Gi
+2
+```
+
+Le nom est `ubuntu-tp`, l'adresse privée est `192.168.56.10`, la VM a 1,5 Go de RAM et 2 processeurs. Le message `[fog][WARNING] Unrecognized arguments: libvirt_ip_command` qui apparaît à chaque commande est un simple avertissement du plugin, sans effet sur le résultat.
+
 ## Lancer le site sans Docker
 
 ```bash
