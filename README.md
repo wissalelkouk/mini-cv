@@ -413,12 +413,14 @@ vagrant ssh -c "hostname; ip -4 a show | grep inet; free -h | head -2; nproc"
 
 ```
 ubuntu-tp
-    inet 192.168.121.123/24 ... scope global dynamic eth0
+    inet 192.168.121.81/24 ... scope global dynamic eth0
     inet 192.168.56.10/24 brd 192.168.56.255 scope global eth1
                total        used        free      shared  buff/cache   available
 Mem:           1.4Gi       336Mi       1.1Gi       2.4Mi       194Mi       1.1Gi
 2
 ```
+
+![Vérification des réglages de la VM](vagrant-config.png)
 
 Le nom est `ubuntu-tp`, l'adresse privée est `192.168.56.10`, la VM a 1,5 Go de RAM et 2 processeurs. Le message `[fog][WARNING] Unrecognized arguments: libvirt_ip_command` qui apparaît à chaque commande est un simple avertissement du plugin, sans effet sur le résultat.
 
