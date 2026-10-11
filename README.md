@@ -403,6 +403,8 @@ Current machine states:
 ubuntu-tp                 running (libvirt)
 ```
 
+![Résultat de vagrant status](vagrant-status.png)
+
 Pour vérifier que les réglages sont appliqués, j'ai interrogé la VM :
 
 ```bash
