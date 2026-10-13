@@ -5,7 +5,14 @@ pipeline {
     stage('Checkout') {
       steps {
         checkout scm
-        sh 'ls -la'
+      }
+    }
+
+    stage('Install dependencies') {
+      steps {
+        dir('portfolio-next') {
+          sh 'node -v && npm -v && npm ci'
+        }
       }
     }
   }
