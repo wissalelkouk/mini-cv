@@ -15,5 +15,13 @@ pipeline {
         }
       }
     }
+
+    stage('Build') {
+      steps {
+        dir('portfolio-next') {
+          sh 'npm run build'
+        }
+      }
+    }
   }
 }
