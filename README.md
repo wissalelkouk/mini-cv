@@ -424,6 +424,232 @@ Mem:           1.4Gi       336Mi       1.1Gi       2.4Mi       194Mi       1.1Gi
 
 Le nom est `ubuntu-tp`, l'adresse privée est `192.168.56.10`, la VM a 1,5 Go de RAM et 2 processeurs. Le message `[fog][WARNING] Unrecognized arguments: libvirt_ip_command` qui apparaît à chaque commande est un simple avertissement du plugin, sans effet sur le résultat.
 
+## Activité 2 - V. Migration du Portfolio vers Next.js
+
+### Étape 18 : nouvelle version avec Next.js
+
+J'ai créé le projet dans le dossier `portfolio-next` du dépôt, avec Node.js 22 :
+
+```bash
+npx create-next-app@latest portfolio-next --js --app --eslint --no-tailwind --no-src-dir --use-npm --import-alias "@/*"
+```
+
+- `--js` : JavaScript (sans TypeScript).
+- `--app` : routeur « App Router », où chaque dossier de `app/` est une page.
+- `--no-tailwind` : j'utilise mon propre CSS.
+- `--import-alias "@/*"` : permet d'écrire `@/components/Header` pour importer un fichier.
+
+J'ai conservé les mêmes sections que la version HTML : About, Skills (avec DevSecOps Skills), Projects, Experience et Contact.
+
+Pour lancer l'application :
+
+```bash
+cd portfolio-next
+npm run build
+npm start -- -H 0.0.0.0 -p 3000
+```
+
+Elle est accessible depuis la machine physique sur `http://IP_DE_LA_VM:3000`.
+
+![Application Next.js](captures/18-next-app.png)
+
+### Étape 19 : composants réutilisables
+
+J'ai découpé la page en composants, un fichier par partie :
+
+```
+portfolio-next/
+├── app/
+│   ├── layout.js          # structure commune : Header + page + Footer
+│   ├── page.js            # page d'accueil : About, Skills, Projects, Experience, Contact
+│   └── globals.css
+├── components/
+│   ├── Header.js          # barre de navigation
+│   ├── About.js           # photo, nom, présentation
+│   ├── Skills.js          # compétences et DevSecOps Skills
+│   ├── Projects.js        # cartes des projets
+│   ├── Experience.js      # frise chronologique
+│   ├── Contact.js         # e-mail et GitHub
+│   └── Footer.js          # pied de page
+└── data/
+    ├── projects.js
+    ├── skills.js
+    └── experience.js
+```
+
+`Header` et `Footer` sont placés une seule fois dans `app/layout.js`, donc ils apparaissent sur toutes les pages. `app/page.js` assemble les autres composants :
+
+```javascript
+export default function Home() {
+  return (
+    <>
+      <About />
+      <Skills />
+      <Projects />
+      <Experience />
+      <Contact />
+    </>
+  );
+}
+```
+
+![Structure des composants](captures/19-structure.png)
+
+### Étape 20 : données séparées
+
+Les informations des projets et des compétences ne sont plus écrites dans les composants : elles sont dans le dossier `data/`. Exemple, `data/projects.js` :
+
+```javascript
+export const projects = [
+  {
+    slug: "docker-nginx",
+    title: "Portfolio avec Docker et Nginx",
+    description: "Image Docker et déploiement avec Docker Compose.",
+    details: "Un Dockerfile sert le portfolio avec Nginx, puis docker compose up -d le déploie sur la VM.",
+    technologies: ["Docker", "Nginx", "Docker Compose"],
+  },
+  // ... autres projets
+];
+```
+
+Le composant `Projects` importe ces données et crée une carte pour chaque objet :
+
+```javascript
+import { projects } from "@/data/projects";
+
+{projects.map((p) => (
+  <article className="card" key={p.slug}>
+    <h3>{p.title}</h3>
+    <p>{p.description}</p>
+  </article>
+))}
+```
+
+Pour ajouter un projet, il suffit d'ajouter un objet dans `data/projects.js`, sans toucher aux composants.
+
+![Fichier de données](captures/20-donnees.png)
+
+### Étape 21 : pages dédiées aux projets
+
+J'ai ajouté deux routes :
+
+| Route | Fichier | Rôle |
+|---|---|---|
+| `/projects` | `app/projects/page.js` | Liste de tous les projets |
+| `/projects/nom-du-projet` | `app/projects/[slug]/page.js` | Page d'un projet |
+
+Le dossier `[slug]` est une **route dynamique** : la partie de l'adresse après `/projects/` (par exemple `docker-nginx`) est lue dans `params`, puis le projet correspondant est cherché dans `data/projects.js`. Si le nom n'existe pas, la page affiche une erreur 404.
+
+```javascript
+export function generateStaticParams() {
+  return projects.map((p) => ({ slug: p.slug }));
+}
+
+export default async function ProjectPage({ params }) {
+  const { slug } = await params;
+  const project = projects.find((p) => p.slug === slug);
+  if (!project) notFound();
+  // affiche le titre, les détails et les technologies
+}
+```
+
+`generateStaticParams` indique à Next.js de générer à l'avance une page pour chaque projet pendant le build.
+
+![Page /projects](captures/21-projects.png)
+
+![Page /projects/docker-nginx](captures/21-projet-detail.png)
+
+## Activité 2 - VI. Premier pipeline Jenkins
+
+Le `Jenkinsfile` est à la racine du dépôt. J'ai créé un job Jenkins de type **Pipeline**, avec la définition **Pipeline script from SCM** : Git, l'adresse `https://github.com/wissalelkouk/mini-cv.git`, la branche `*/main` et le chemin `Jenkinsfile`. Node.js est installé sur la VM, donc Jenkins peut utiliser `npm` directement.
+
+### Étape 22 : récupérer le dépôt GitHub
+
+```groovy
+pipeline {
+  agent any
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+        sh 'ls -la'
+      }
+    }
+  }
+}
+```
+
+`checkout scm` récupère le dépôt configuré dans le job. `ls -la` affiche les fichiers récupérés.
+
+![Pipeline exécuté](captures/22-pipeline.png)
+
+### Étape 23 : installer les dépendances
+
+J'ai ajouté un stage qui installe les dépendances dans `portfolio-next` :
+
+```groovy
+    stage('Install dependencies') {
+      steps {
+        dir('portfolio-next') {
+          sh 'node -v && npm -v && npm ci'
+        }
+      }
+    }
+```
+
+`dir('portfolio-next')` se place dans le dossier du projet Next.js. `npm ci` installe exactement les versions du fichier `package-lock.json`, ce qui rend le résultat reproductible.
+
+![Stage Install dependencies](captures/23-stage-install.png)
+
+### Étape 24 : construire l'application
+
+J'ai ajouté le stage de build :
+
+```groovy
+    stage('Build') {
+      steps {
+        dir('portfolio-next') {
+          sh 'npm run build'
+        }
+      }
+    }
+```
+
+Le `Jenkinsfile` final contient les trois stages : Checkout, Install dependencies et Build.
+
+```groovy
+pipeline {
+  agent any
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Install dependencies') {
+      steps {
+        dir('portfolio-next') {
+          sh 'node -v && npm -v && npm ci'
+        }
+      }
+    }
+
+    stage('Build') {
+      steps {
+        dir('portfolio-next') {
+          sh 'npm run build'
+        }
+      }
+    }
+  }
+}
+```
+
+![Résultat du build](captures/24-build.png)
+
 ## Lancer le site sans Docker
 
 ```bash
