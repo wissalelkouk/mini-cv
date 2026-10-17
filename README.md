@@ -665,3 +665,539 @@ git add .
 git commit -m "Message du commit"
 git push
 ```
+
+
+---
+
+## Activité 3 : Ansible, API Express et Docker Compose
+
+Cette activité automatise l'administration d'un serveur avec Ansible, ajoute une API Node.js / Express au portfolio, puis exécute le frontend et l'API ensemble avec Docker Compose.
+
+---
+
+## VII. Automatisation avec Ansible
+
+### Étape 25 : installer Ansible sur la VM d'administration
+
+Ansible est installé sur la VM Ubuntu Server, qui sert de machine d'administration. Ansible n'a pas besoin d'agent sur les serveurs gérés : il se connecte en SSH.
+
+```
+sudo apt update
+sudo apt install -y ansible
+ansible --version
+```
+
+![Version d'Ansible](captures/act3-25-ansible-version.png)
+
+### Étape 26 : inventaire et test de communication
+
+Le serveur géré est la VM Ubuntu créée avec Vagrant (`ubuntu-tp`, IP `192.168.56.10`).
+
+Fichier `ansible/inventory` :
+
+```
+[ubuntu]
+192.168.56.10
+
+[ubuntu:vars]
+ansible_user=vagrant
+ansible_ssh_private_key_file=~/vagrant-ubuntu/.vagrant/machines/ubuntu-tp/libvirt/private_key
+```
+
+Le fichier contient seulement le **chemin** de la clé privée, jamais la clé elle-même. Le dossier `.vagrant/` n'est pas versionné. Le fichier `ansible/ansible.cfg` indique `inventory = inventory`, donc l'option `-i` n'est pas nécessaire.
+
+Avant le premier test, j'ai enregistré l'empreinte SSH du serveur :
+
+```
+ssh-keyscan -H 192.168.56.10 >> ~/.ssh/known_hosts
+```
+
+Commande de test, lancée depuis le dossier `ansible/` :
+
+```
+ansible all -m ping
+```
+
+La réponse `"ping": "pong"` prouve que la connexion SSH fonctionne et que Python est disponible sur le serveur.
+
+![ansible all -m ping](captures/act3-26-ansible-ping.png)
+
+### Étape 27 : premier playbook, installer git et curl
+
+Fichier `ansible/install-git-curl.yml` :
+
+```yaml
+---
+- name: Installer git et curl sur le serveur Ubuntu
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Installer les paquets git et curl
+      ansible.builtin.apt:
+        name:
+          - git
+          - curl
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Verifier la version de git
+      ansible.builtin.command: git --version
+      register: git_version
+      changed_when: false
+
+    - name: Afficher la version de git
+      ansible.builtin.debug:
+        msg: "{{ git_version.stdout }}"
+```
+
+- `become: true` : les tâches s'exécutent avec les droits `sudo`.
+- `state: present` : le paquet doit être installé. S'il l'est déjà, Ansible ne fait rien.
+
+```
+ansible-playbook install-git-curl.yml
+```
+
+La capture ci-dessous montre une exécution où les paquets étaient déjà présents : `changed=0` et `failed=0`. C'est l'**idempotence** d'Ansible, qui relance le playbook sans rien modifier inutilement.
+
+![Exécution du playbook git et curl](captures/act3-27-playbook-git-curl.png)
+
+### Étape 28 : installer Docker automatiquement
+
+Fichier `ansible/install-docker.yml`. Il ajoute le dépôt officiel de Docker (clé GPG et dépôt APT), installe Docker Engine et le plugin Compose, active le service et ajoute l'utilisateur `vagrant` au groupe `docker`.
+
+```yaml
+---
+- name: Installer Docker sur une nouvelle VM Ubuntu
+  hosts: all
+  become: true
+
+  vars:
+    docker_user: vagrant
+
+  tasks:
+    - name: Installer les prerequis
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+        state: present
+        update_cache: true
+
+    - name: Creer le dossier des cles APT
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Telecharger la cle GPG officielle de Docker
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Ajouter le depot APT de Docker
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc]
+          https://download.docker.com/linux/ubuntu
+          {{ ansible_facts['distribution_release'] }} stable
+        filename: docker
+        state: present
+
+    - name: Installer Docker Engine et Compose
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+
+    - name: Demarrer et activer le service Docker
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Ajouter l'utilisateur au groupe docker
+      ansible.builtin.user:
+        name: "{{ docker_user }}"
+        groups: docker
+        append: true
+
+    - name: Verifier la version de Docker
+      ansible.builtin.command: docker --version
+      register: docker_version
+      changed_when: false
+
+    - name: Afficher la version de Docker
+      ansible.builtin.debug:
+        msg: "{{ docker_version.stdout }}"
+```
+
+```
+ansible-playbook install-docker.yml
+ansible all -m command -a "docker --version"
+```
+
+Le statut `CHANGED` du module `command` apparaît à chaque exécution : il ne signifie pas que Docker a été réinstallé.
+
+![docker --version](captures/act3-28-docker-version.png)
+
+---
+
+## VIII. Création de l'API Node.js / Express
+
+### Étape 29 : structure du projet et démarrage
+
+L'API est dans le dossier `api/`. Elle a son propre `package.json` et se lance indépendamment du frontend.
+
+```
+api/
+├── server.js          # routes Express
+├── package.json
+├── Dockerfile
+├── .dockerignore
+└── data/
+    ├── profile.js
+    ├── projects.js
+    └── skills.js
+```
+
+Dépendances : `express` (serveur HTTP), `cors` (n'autorise qu'une origine précise) et `helmet` (en-têtes de sécurité HTTP).
+
+```
+cd api
+npm install
+npm start
+```
+
+![API démarrée](captures/act3-29-api-start.png)
+
+### Étape 30 : route `GET /api/health`
+
+Elle indique que l'API fonctionne. Elle sert aussi de test de santé (`healthcheck`) à Docker Compose.
+
+```
+curl http://localhost:4000/api/health
+```
+
+![Route health](captures/act3-30-health.png)
+
+### Étape 31 : route `GET /api/profile`
+
+Elle retourne les informations principales du portfolio : nom, titre, résumé et liens GitHub.
+
+```
+curl http://localhost:4000/api/profile
+```
+
+![Route profile](captures/act3-31-profile.png)
+
+### Étape 32 : route `GET /api/projects`
+
+Elle retourne la liste des projets du portfolio. Les données viennent de `api/data/projects.js`, copié depuis le frontend.
+
+```
+curl http://localhost:4000/api/projects
+```
+
+![Route projects](captures/act3-32-projects.png)
+
+### Étape 33 : route `GET /api/skills`
+
+Elle retourne les compétences en deux listes : `skills` (par catégorie) et `devsecops` (outils DevSecOps utilisés ou non).
+
+```
+curl http://localhost:4000/api/skills
+```
+
+Code de `api/server.js` :
+
+```js
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import { profile } from "./data/profile.js";
+import { projects } from "./data/projects.js";
+import { skills, devsecops } from "./data/skills.js";
+
+const app = express();
+const PORT = process.env.PORT || 4000;
+
+app.disable("x-powered-by");
+app.use(helmet());
+app.use(cors({ origin: process.env.CORS_ORIGIN || "http://localhost:3000" }));
+
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "ok",
+    service: "devsecops-api",
+    uptime: Math.round(process.uptime()),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get("/api/profile", (req, res) => res.json(profile));
+app.get("/api/projects", (req, res) => res.json(projects));
+app.get("/api/skills", (req, res) => res.json({ skills, devsecops }));
+
+app.use((req, res) => res.status(404).json({ error: "Route introuvable" }));
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`API demarree sur le port ${PORT}`);
+});
+```
+
+![Route skills](captures/act3-33-skills.png)
+
+### Étape 34 : le frontend lit les projets depuis l'API
+
+Un fichier `portfolio-next/lib/api.js` appelle l'API côté serveur. Le composant `Projects` devient asynchrone (Server Component) : il lit les projets depuis l'API au lieu de `data/projects.js`.
+
+```js
+import { connection } from "next/server";
+
+// Appelé côté serveur : API_URL n'est jamais envoyée au navigateur.
+const API_URL = process.env.API_URL || "http://localhost:4000";
+
+async function get(path) {
+  // Les données sont lues à chaque requête, pas pendant le build.
+  await connection();
+  const res = await fetch(`${API_URL}${path}`, { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(`API ${path} : erreur ${res.status}`);
+  }
+  return res.json();
+}
+
+export const getProjects = () => get("/api/projects");
+export const getSkills = () => get("/api/skills");
+```
+
+Dans le composant : `const projects = await getProjects();`.
+
+Le projet utilise Next.js 16 avec **Cache Components**, qui interdit `export const dynamic = "force-dynamic"`. J'ai donc utilisé `await connection()`, qui indique que les données sont lues à chaque requête, et j'ai entouré les composants d'un `<Suspense>` dans `app/page.js`. Ainsi, `npm run build` n'a pas besoin que l'API soit démarrée. Les pages `/projects/[slug]` utilisent encore les données locales.
+
+![Projets affichés depuis l'API](captures/act3-34-projects-api.png)
+
+### Étape 35 : le frontend lit les compétences depuis l'API
+
+Même principe : `Skills` appelle `getSkills()`, qui retourne `{ skills, devsecops }`. Les sections « Skills » et « DevSecOps Skills » sont donc alimentées par l'API.
+
+```js
+const { skills, devsecops } = await getSkills();
+```
+
+![Compétences affichées depuis l'API](captures/act3-35-skills-api.png)
+
+---
+
+## IX. Variables d'environnement et configuration
+
+### Étape 36 : variable `API_URL`
+
+Le frontend lit l'adresse de l'API dans `process.env.API_URL`.
+
+**Pourquoi l'URL de l'API ne doit pas être codée en dur ?**
+
+- L'adresse change selon l'environnement : `http://localhost:4000` en développement, `http://api:4000` dans Docker Compose, une autre adresse en production.
+- Avec une variable, on déploie la **même image** partout sans modifier le code ni reconstruire.
+- Cela évite de publier des adresses internes sur GitHub. La même pratique s'applique ensuite aux clés et aux tokens.
+
+`API_URL` n'a pas le préfixe `NEXT_PUBLIC_` : elle reste côté serveur et n'est pas envoyée au navigateur.
+
+### Étape 37 : fichier `.env.example`
+
+Fichier `.env.example` à la racine du dépôt :
+
+```
+# Copier ce fichier en .env (non versionne) puis adapter si besoin.
+# URL de l'API vue par le frontend :
+#   - avec Docker Compose : http://api:4000 (nom du service sur le reseau Compose)
+#   - en local (npm run dev dans portfolio-next) : http://localhost:4000
+API_URL=http://api:4000
+
+# Port d'ecoute de l'API
+PORT=4000
+
+# Origine autorisee par CORS (utile seulement pour des appels depuis le navigateur)
+CORS_ORIGIN=http://localhost:3000
+```
+
+Il ne contient aucun secret. Le vrai fichier `.env` est ignoré par Git (`.gitignore`).
+
+---
+
+## X. Dockerisation frontend + API
+
+### Étape 38 : Dockerfile du frontend
+
+Fichier `portfolio-next/Dockerfile`, en trois étapes (**multi-stage**) :
+
+```dockerfile
+# 1) Installation des dependances
+FROM node:22-alpine AS deps
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+
+# 2) Build de l'application
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run build
+
+# 3) Image finale, minimale
+FROM node:22-alpine AS run
+WORKDIR /app
+ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
+COPY --from=build /app/.next/standalone ./
+COPY --from=build /app/.next/static ./.next/static
+COPY --from=build /app/public ./public
+
+USER node
+EXPOSE 3000
+CMD ["node", "server.js"]
+```
+
+- `deps` installe les dépendances, `build` compile l'application, `run` ne garde que le résultat (mode `standalone` de Next.js, activé avec `output: "standalone"` dans `next.config.mjs`).
+- L'image finale est plus légère : elle ne contient ni les sources ni les outils de build.
+- Le conteneur s'exécute avec l'utilisateur `node`, non root.
+
+**Variante utilisée sur ma VM : `Dockerfile.prebuilt`.** Le réseau de la VM faisait échouer `npm ci` dans Docker (`ETIMEDOUT` après plus de 800 secondes). J'ai donc construit l'image à partir du build `standalone` généré sur la VM par `npm run build`. Le `Dockerfile` multi-stage reste la méthode de référence sur un réseau normal.
+
+```dockerfile
+FROM node:22-alpine
+WORKDIR /app
+ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
+
+COPY .next/standalone ./
+COPY .next/static ./portfolio-next/.next/static
+COPY public ./portfolio-next/public
+
+USER node
+EXPOSE 3000
+CMD ["node", "portfolio-next/server.js"]
+```
+
+Le chemin `portfolio-next/server.js` vient du fait que Next.js a pris `mini-cv/` comme racine (deux `package-lock.json`). Cette variante demande de lancer `npm run build` dans `portfolio-next` avant de construire l'image.
+
+### Étape 39 : Dockerfile de l'API
+
+Fichier `api/Dockerfile` :
+
+```dockerfile
+FROM node:22-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+COPY . .
+
+USER node
+EXPOSE 4000
+CMD ["node", "server.js"]
+```
+
+- `package*.json` est copié avant le code : tant que les dépendances ne changent pas, Docker réutilise le cache.
+- `--omit=dev` n'installe que les dépendances de production.
+- Le conteneur tourne avec l'utilisateur `node`, non root, et expose le port 4000.
+
+### Étape 40 : construire les deux images
+
+```
+# Frontend (depuis portfolio-next/, avec le build standalone déjà généré)
+cd portfolio-next
+npm run build
+docker build -f Dockerfile.prebuilt -t devsecops-portfolio .
+
+# API
+cd ..
+docker build --network=host -t devsecops-api ./api
+
+docker images | grep devsecops
+```
+
+Avec un réseau normal, la première commande est simplement `docker build -t devsecops-portfolio ./portfolio-next`.
+
+![Images Docker construites](captures/act3-40-images.png)
+
+### Étape 41 : Docker Compose
+
+Fichier `docker-compose.yml` :
+
+```yaml
+services:
+  api:
+    build: ./api
+    image: devsecops-api
+    container_name: devsecops-api
+    environment:
+      - PORT=${PORT:-4000}
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
+    ports:
+      - "4000:4000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./portfolio-next
+      dockerfile: Dockerfile.prebuilt
+    image: devsecops-portfolio
+    container_name: devsecops-frontend
+    environment:
+      - API_URL=${API_URL:-http://api:4000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+```
+
+- `api` et `frontend` sont deux services lancés ensemble par une seule commande.
+- `API_URL=http://api:4000` : `api` est le nom du service, résolu par le DNS du réseau Compose.
+- `healthcheck` sur l'API, et `depends_on` avec `condition: service_healthy` : le frontend ne démarre que lorsque l'API répond.
+- Le test de santé utilise Node avec `127.0.0.1` : `wget` d'Alpine résout `localhost` en IPv6 alors que l'API écoute en IPv4, ce qui rendait le conteneur `unhealthy`.
+- L'ancien fichier de l'étape 13 est conservé sous le nom `docker-compose.static.yml`.
+
+```
+cp .env.example .env
+docker compose up -d
+docker compose ps
+```
+
+La ligne `cv-compose` correspond au conteneur Nginx de l'étape 13, qui tourne toujours. Les deux nouveaux services sont `devsecops-api` (`healthy`) et `devsecops-frontend` (`Up`).
+
+![docker compose ps](captures/act3-41-compose-ps.png)
+
+### Étape 42 : communication frontend → API par le réseau Compose
+
+Le frontend (conteneur `devsecops-frontend`) appelle l'API par `http://api:4000`, le nom du service sur le réseau interne créé par Compose, et non par `localhost`.
+
+Preuve : la commande suivante s'exécute **dans le conteneur du frontend** et contacte l'API par son nom de service.
+
+```
+docker compose exec frontend wget -qO- http://api:4000/api/health
+```
+
+![Appel de l'API depuis le conteneur du frontend](captures/act3-42-portfolio-apihealth.png)
+
+Le portfolio, servi par le conteneur sur le port 3000, affiche les données fournies par l'API (profil, compétences et section « DevSecOps Skills »).
+
+![Portfolio affichant les données de l'API](captures/act3-42-portfolio-api.png)
