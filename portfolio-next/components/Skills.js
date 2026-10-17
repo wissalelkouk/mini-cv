@@ -1,6 +1,6 @@
-import { skills, devsecops } from "@/data/skills";
-
-export default function Skills() {
+import { getSkills } from "@/lib/api";
+export default async function Skills() {
+const { skills, devsecops } = await getSkills();
   return (
     <section id="skills">
       <h2>Skills</h2>

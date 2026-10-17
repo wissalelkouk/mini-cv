@@ -1,0 +1,11 @@
+FROM node:22-alpine
+WORKDIR /app
+ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
+
+COPY .next/standalone ./
+COPY .next/static ./portfolio-next/.next/static
+COPY public ./portfolio-next/public
+
+USER node
+EXPOSE 3000
+CMD ["node", "portfolio-next/server.js"]

@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import About from "@/components/About";
 import Skills from "@/components/Skills";
 import Projects from "@/components/Projects";
@@ -8,8 +9,12 @@ export default function Home() {
   return (
     <>
       <About />
-      <Skills />
-      <Projects />
+      <Suspense fallback={<p>Chargement des compétences…</p>}>
+        <Skills />
+      </Suspense>
+      <Suspense fallback={<p>Chargement des projets…</p>}>
+        <Projects />
+      </Suspense>
       <Experience />
       <Contact />
     </>

@@ -1,0 +1,6 @@
+[ubuntu]
+192.168.56.10
+
+[ubuntu:vars]
+ansible_user=vagrant
+ansible_ssh_private_key_file=~/vagrant-ubuntu/.vagrant/machines/ubuntu-tp/libvirt/private_key

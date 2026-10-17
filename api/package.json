@@ -1,0 +1,16 @@
+{
+  "name": "devsecops-api",
+  "version": "1.0.0",
+  "description": "API Express du portfolio DevSecOps",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0"
+  }
+}

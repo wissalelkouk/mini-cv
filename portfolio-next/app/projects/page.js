@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { projects } from "@/data/projects";
-
 export const metadata = { title: "Projets | DevSecOps Portfolio" };
 
 export default function ProjectsPage() {
