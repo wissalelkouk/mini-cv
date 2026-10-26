@@ -1,5 +1,6 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
+import prisma from "../db.js";
 import { contactSchema } from "../schemas.js";
 import { HttpError } from "../errors.js";
 
@@ -20,8 +21,8 @@ router.post("/", limiter, async (req, res, next) => {
     return next(new HttpError(400, "Données invalides", details));
   }
   try {
-    // Prisma sera branché à l'étape PostgreSQL ; pour l'instant on simule l'enregistrement
-    res.status(201).json({ status: "ok", id: 1 });
+    const saved = await prisma.message.create({ data: parsed.data });
+    res.status(201).json({ status: "ok", id: saved.id });
   } catch (err) {
     next(err);
   }
