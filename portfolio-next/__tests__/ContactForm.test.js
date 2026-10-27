@@ -3,10 +3,14 @@ import userEvent from "@testing-library/user-event";
 import ContactForm from "@/components/ContactForm";
 
 async function remplirEtEnvoyer() {
-  await userEvent.type(screen.getByLabelText(/nom/i), "Wissal");
-  await userEvent.type(screen.getByLabelText(/email/i), "wissal@example.com");
-  await userEvent.type(screen.getByLabelText(/message/i), "Un message de test assez long");
-  await userEvent.click(screen.getByRole("button", { name: /envoyer/i }));
+  const user = userEvent.setup({ delay: null });
+  await user.click(screen.getByLabelText(/nom/i));
+  await user.paste("Wissal");
+  await user.click(screen.getByLabelText(/email/i));
+  await user.paste("wissal@example.com");
+  await user.click(screen.getByLabelText(/message/i));
+  await user.paste("Un message de test assez long");
+  await user.click(screen.getByRole("button", { name: /envoyer/i }));
 }
 
 test("envoie le formulaire à /api/contact et affiche la confirmation", async () => {
