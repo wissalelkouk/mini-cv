@@ -29,7 +29,7 @@ About, Skills, DevSecOps Skills, Projects, Experience, Contact.
 - Les projets sont présentés sous forme de cartes, et l'expérience sous forme de frise chronologique.
 - J'ai ajouté un mode sombre et un mode clair, mémorisé dans le navigateur.
 - Le site est responsive : il s'adapte aux écrans de téléphone.
-- Le formulaire de contact ouvre le client mail, sans envoyer de données à un serveur.
+- Le formulaire de contact envoie les données à l'API Express (voir Activité 4).
 - J'ai ajouté des protections de sécurité :
   - une politique `Content-Security-Policy` qui n'autorise que les scripts et styles du site ;
   - des liens externes avec `rel="noopener noreferrer"` ;
@@ -1201,3 +1201,447 @@ docker compose exec frontend wget -qO- http://api:4000/api/health
 Le portfolio, servi par le conteneur sur le port 3000, affiche les données fournies par l'API (profil, compétences et section « DevSecOps Skills »).
 
 ![Portfolio affichant les données de l'API](captures/act3-42-portfolio-api.png)
+
+---
+
+# Activité 4 - Automatisation, API sécurisée, PostgreSQL, tests et pipeline DevSecOps
+
+Dans cette activité, j'ai ajouté un backend Express sécurisé au portfolio, une base PostgreSQL, des tests automatisés, un déploiement automatique avec Vagrant et Ansible, et un pipeline Jenkins DevSecOps.
+
+```
+mini-cv/
+├── .env.example  .gitignore  docker-compose.yml  Jenkinsfile
+├── ansible/playbook.yml
+├── api/              (Express, Prisma, tests Vitest)
+├── portfolio-next/   (Next.js, tests Jest)
+├── integration/      (test front -> API -> PostgreSQL)
+└── vagrant-ubuntu/Vagrantfile
+```
+
+## 12. Évolution et sécurisation de l'API
+
+### Étape 46 : route `POST /api/contact`
+
+L'API Express est dans `api/`. La route `POST /api/contact` reçoit les données du formulaire de contact et les enregistre en base.
+
+**Requête :**
+
+```
+curl -i -X POST http://localhost:4000/api/contact \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Wissal","email":"wissal@example.com","message":"Bonjour, ceci est un test."}'
+```
+
+**Réponse (201 Created) :**
+
+```
+{"status":"ok","id":1}
+```
+
+### Étape 47 : formulaire Next.js connecté à l'API
+
+Le composant `components/ContactForm.js` envoie les données en `POST` vers `/api/contact`. Une règle `rewrites` dans `next.config.mjs` redirige `/api/*` vers l'API Express : le navigateur n'appelle donc qu'un seul domaine, sans IP codée en dur et sans CORS.
+
+**Capture d'un envoi réussi :**
+
+![Formulaire de contact : envoi réussi](captures/act4/47-formulaire-envoye.png)
+
+### Étape 48 : validation stricte avec Zod
+
+Le schéma est dans `api/src/schemas.js`. Il fixe des longueurs minimales et maximales, vérifie le format de l'email et utilise `.strict()` pour refuser tout champ en trop (protection contre le mass assignment).
+
+**Exemple de requête refusée (400) :**
+
+```
+curl -i -X POST http://localhost:4000/api/contact \
+  -H "Content-Type: application/json" \
+  -d '{"name":"W","email":"x","message":"c"}'
+```
+
+```
+HTTP/1.1 400 Bad Request
+Content-Type: application/json; charset=utf-8
+
+{"status":"error","message":"Données invalides","details":[{"champ":"name","message":"Too small: expected string to have >=2 characters"},{"champ":"email","message":"Invalid email address"},{"champ":"message","message":"Too small: expected string to have >=10 characters"}]}
+```
+
+![Formulaire : erreur de validation affichée](captures/act4/48-formulaire-erreur.png)
+
+### Étape 49 : gestion centralisée des erreurs
+
+Toutes les erreurs passent par un seul middleware (`api/src/errors.js`). Les erreurs 4xx renvoient un message clair, et toute erreur 5xx renvoie un message générique, sans stack trace ni détail technique.
+
+**Exemple de réponse d'erreur (JSON invalide) :**
+
+```
+HTTP/1.1 400 Bad Request
+
+{"status":"error","message":"JSON invalide"}
+```
+
+**Exemple de route inconnue :**
+
+```
+HTTP/1.1 404 Not Found
+
+{"status":"error","message":"Route introuvable"}
+```
+
+### Étape 50 : headers de sécurité avec Helmet
+
+`app.use(helmet())` dans `api/src/app.js`.
+
+```
+curl -I http://localhost:4000/api/health
+```
+
+```
+HTTP/1.1 200 OK
+Content-Security-Policy: default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';img-src 'self' data:;object-src 'none';script-src 'self';script-src-attr 'none';style-src 'self' https: 'unsafe-inline';upgrade-insecure-requests
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Resource-Policy: same-origin
+Origin-Agent-Cluster: ?1
+Referrer-Policy: no-referrer
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+X-Content-Type-Options: nosniff
+X-DNS-Prefetch-Control: off
+X-Download-Options: noopen
+X-Frame-Options: SAMEORIGIN
+X-Permitted-Cross-Domain-Policies: none
+X-XSS-Protection: 0
+```
+
+### Étape 51 : rate limiting
+
+`POST /api/contact` est limité à 5 requêtes par 15 minutes et par IP (`express-rate-limit`). La limite se règle avec la variable `RATE_LIMIT_MAX`. Au-delà, l'API répond 429.
+
+```
+for i in $(seq 1 7); do curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:4000/api/contact \
+  -H "Content-Type: application/json" -d '{"name":"Wissal","email":"w@example.com","message":"Message de test"}'; done
+```
+
+**Exemple de réponse 429 :**
+
+```
+[À COMPLÉTER : coller ici la sortie de curl -i sur la requête refusée]
+HTTP/1.1 429 Too Many Requests
+RateLimit-Policy: 5;w=900
+
+{"status":"error","message":"Trop de requêtes, réessayez plus tard."}
+```
+
+### Étape 52 : OWASP API Security Top 10 (2023)
+
+| Risque | Concerne mon API ? | Mesure en place ou prévue |
+|---|---|---|
+| API1 - Broken Object Level Authorization | Faible : aucune ressource propre à un utilisateur | Aucune route de lecture n'est exposée |
+| API2 - Broken Authentication | Faible : seule route publique `POST /api/contact` | Prévu : authentification si j'ajoute une route d'administration |
+| API3 - Broken Object Property Level Authorization | Oui | Zod `.strict()` : seuls `name`, `email` et `message` sont acceptés |
+| API4 - Unrestricted Resource Consumption | Oui | Rate limiting, corps limité à 10 ko, longueurs maximales dans Zod |
+| API5 - Broken Function Level Authorization | Faible | Aucune route d'administration |
+| API6 - Unrestricted Access to Sensitive Business Flows | Oui (spam du formulaire) | Rate limiting ; prévu : honeypot ou captcha |
+| API7 - Server Side Request Forgery | Non | L'API ne fait aucune requête sortante |
+| API8 - Security Misconfiguration | Oui | Helmet, CORS restreint, erreurs génériques sans stack trace, secrets dans `.env` (non versionné) |
+| API9 - Improper Inventory Management | Oui | Deux routes seulement, documentées ici ; prévu : préfixe `/api/v1` |
+| API10 - Unsafe Consumption of APIs | Non | Aucune API tierce ; PostgreSQL non exposé publiquement (127.0.0.1) |
+
+## 13. Base de données PostgreSQL
+
+### Étape 53 : service PostgreSQL dans Docker Compose
+
+```yaml
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      retries: 10
+```
+
+Le port 5432 n'est publié que sur `127.0.0.1` : la base n'est pas accessible depuis le réseau.
+
+```
+docker compose ps
+```
+
+```
+[À COMPLÉTER : coller la sortie de docker compose ps avec db, api et frontend]
+```
+
+### Étape 54 : enregistrement des messages dans PostgreSQL
+
+La route `POST /api/contact` enregistre le message avec Prisma (`prisma.message.create`). Prisma envoie des requêtes paramétrées, ce qui protège contre l'injection SQL.
+
+```
+docker compose exec db psql -U portfolio -d portfolio -c "SELECT * FROM contact_messages;"
+```
+
+```
+ id |  name  |       email        |          message           |        createdAt
+----+--------+--------------------+----------------------------+-------------------------
+  1 | Wissal | wissal@example.com | Bonjour, ceci est un test. | 2026-10-26 22:40:17.669
+(1 row)
+```
+
+![Données enregistrées dans la table](captures/act4/54-table-contact-messages.png)
+
+### Étape 55 : migrations avec Prisma
+
+Le modèle est dans `api/prisma/schema.prisma`. Première migration :
+
+```
+cd api
+npx prisma migrate dev --name init
+```
+
+```
+Applying migration `20261026192941_init`
+
+The following migration(s) have been created and applied from new schema changes:
+
+prisma/migrations/
+  └─ 20261026192941_init/
+    └─ migration.sql
+
+Your database is now in sync with your schema.
+```
+
+Pour exécuter les migrations existantes (production, conteneur, base vierge) :
+
+```
+npx prisma migrate deploy
+```
+
+Le conteneur `api` exécute `npx prisma migrate deploy` à chaque démarrage, avant de lancer le serveur.
+
+### Étape 56 : variables de connexion dans `.env.example`
+
+```
+POSTGRES_USER=portfolio
+POSTGRES_PASSWORD=change_me
+POSTGRES_DB=portfolio
+DATABASE_URL=postgresql://portfolio:change_me@localhost:5432/portfolio
+CORS_ORIGIN=http://localhost:3000
+RATE_LIMIT_MAX=5
+```
+
+Le vrai fichier `.env` n'est jamais versionné (il est dans `.gitignore`) : il est créé à partir de `.env.example`, avec un mot de passe généré.
+
+## 14. Tests applicatifs
+
+### Étape 57 : test automatisé du frontend
+
+Jest et React Testing Library testent le composant `ContactForm` : envoi réussi, erreur de validation renvoyée par l'API, serveur injoignable.
+
+```
+cd portfolio-next
+npm test
+```
+
+```
+ PASS  __tests__/ContactForm.test.js
+  ✓ envoie le formulaire à /api/contact et affiche la confirmation (1496 ms)
+  ✓ affiche l'erreur de validation renvoyée par l'API (901 ms)
+  ✓ affiche une erreur si le serveur est injoignable (544 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       3 passed, 3 total
+```
+
+### Étape 58 : test automatisé de l'API
+
+Vitest et Supertest testent les routes de l'API (la base est simulée).
+
+```
+cd api
+npm test
+```
+
+```
+ ✓ tests/security.test.js (14 tests)
+ ✓ tests/contact.test.js (4 tests)
+ ✓ tests/ratelimit.test.js (1 test)
+
+ Test Files  3 passed (3)
+      Tests  19 passed (19)
+```
+
+![Tests frontend et API réussis](captures/act4/58-tests-front-api.png)
+
+### Étape 59 : entrées invalides, injections et requêtes malformées
+
+Le fichier `api/tests/security.test.js` vérifie que l'API refuse (400) et n'enregistre rien dans les cas suivants :
+
+| Cas testé | Résultat attendu |
+|---|---|
+| Corps vide, email invalide, nom trop court, message trop long | 400 |
+| Champ en trop (`isAdmin: true`, mass assignment) | 400 |
+| Type incorrect (nombre à la place d'un texte) | 400 |
+| Opérateur NoSQL dans l'email (`{"$ne": null}`) | 400 |
+| Injection SQL dans l'email (`a@b.com' OR '1'='1`) | 400 |
+| JSON malformé | 400 |
+| Mauvais `Content-Type` | 400 |
+| Corps de plus de 10 ko | 413 |
+| Dépassement de la limite de requêtes | 429 |
+| Erreur de la base de données | 500 générique, sans fuite d'information |
+
+Une injection SQL placée dans le champ `name` (`Robert'); DROP TABLE contact_messages;--`) est valide pour le schéma : elle est enregistrée comme simple texte, car Prisma utilise des requêtes paramétrées. Le test vérifie que la chaîne arrive à Prisma sans modification.
+
+### Étape 60 : tests d'intégration front → API → PostgreSQL
+
+Le test `integration/contact.integration.test.mjs` s'exécute sur la vraie pile Docker Compose : il envoie la requête au frontend, qui la transmet à l'API, puis il vérifie dans PostgreSQL que la ligne existe.
+
+```
+docker compose up -d
+node --test integration/contact.integration.test.mjs
+```
+
+```
+✔ le front répond (1960.331869ms)
+✔ front -> API -> PostgreSQL : un message valide est enregistré (1909.586284ms)
+✔ un message invalide est refusé et non enregistré (681.525103ms)
+✔ une injection SQL est stockée comme simple texte, la table survit (553.704217ms)
+ℹ tests 4
+ℹ pass 4
+ℹ fail 0
+```
+
+![Tests d'intégration réussis](captures/act4/60-tests-integration.png)
+
+## 11. Infrastructure automatisée avec Vagrant + Ansible
+
+### Étape 43 : playbook Ansible
+
+Le playbook `ansible/playbook.yml` installe Docker, Docker Compose et Git sur la VM, ajoute un swap de 2 Go (le build de Next.js consomme de la mémoire), clone le dépôt, génère le fichier `.env` avec un mot de passe aléatoire pour PostgreSQL, puis lance `docker compose up -d --build` et attend que le portfolio réponde.
+
+Commande utilisée :
+
+```
+cd vagrant-ubuntu
+ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook \
+  -i .vagrant/provisioners/ansible/inventory/vagrant_ansible_inventory \
+  ../ansible/playbook.yml
+```
+
+**Portfolio accessible sur la VM créée par Vagrant (`http://192.168.56.10:3000`, via un tunnel SSH) :**
+
+![Portfolio déployé par Ansible](captures/act4/43-portfolio-vm.png)
+
+### Étape 44 : Vagrant lance Ansible automatiquement
+
+J'ai ajouté un provisioner Ansible au `Vagrantfile` :
+
+```ruby
+  config.vm.provision "ansible" do |ansible|
+    ansible.playbook = "../ansible/playbook.yml"
+    ansible.compatibility_mode = "2.0"
+  end
+```
+
+Résultat : `vagrant up` crée la VM, configure Ansible, installe Docker et déploie le portfolio, sans aucune autre commande.
+
+![Automatisation complète avec vagrant up](captures/act4/44-vagrant-up-complet.png)
+
+### Étape 45 : destruction et recréation de la VM
+
+```
+vagrant destroy -f
+vagrant up
+vagrant ssh -c "curl -sI http://localhost:3000 | head -1; docker ps --format '{{.Names}}\t{{.Status}}'"
+```
+
+Après la destruction, la VM est entièrement recréée et le portfolio est redéployé automatiquement, sans intervention manuelle.
+
+![vagrant destroy](captures/act4/45-vagrant-destroy.png)
+
+![Portfolio redéployé après vagrant up](captures/act4/45-portfolio-redeploye.png)
+
+[À COMPLÉTER : durée totale mesurée du `vagrant up` après la destruction]
+
+## 15. Jenkins : tests et images Docker
+
+Le `Jenkinsfile` est à la racine du dépôt. Les stages s'enchaînent dans cet ordre : Checkout, Tests frontend, Tests API, Gitleaks, Semgrep, npm audit, OWASP Dependency-Check, Build images Docker, Trivy.
+
+### Étape 61 : tests du frontend et de l'API dans Jenkins
+
+Les stages « Tests frontend » (`npm ci` puis `npm test`) et « Tests API » (`npm ci` puis `npm test`) s'exécutent automatiquement à chaque build.
+
+![Stages de tests dans Jenkins](captures/act4/61-stages-tests.png)
+
+### Étape 62 : construction des images Docker
+
+Le stage « Build images Docker » construit `devsecops-portfolio` et `devsecops-api`.
+
+![Stage de construction des images](captures/act4/62-build-images.png)
+
+### Étape 63 : le Git SHA comme tag des images
+
+Le stage Checkout calcule le SHA court du commit avec `git rev-parse --short=7 HEAD`, puis les images sont taguées avec :
+
+```
+docker build -t devsecops-portfolio:${GIT_SHA} -t devsecops-portfolio:latest ./portfolio-next
+docker build -t devsecops-api:${GIT_SHA} -t devsecops-api:latest ./api
+```
+
+Exemple d'images générées :
+
+```
+[À COMPLÉTER : coller la sortie de docker images | grep devsecops avec les tags SHA]
+```
+
+## 16. Pipeline DevSecOps Jenkins
+
+| Étape | Outil | Question | Échec du pipeline si |
+|---|---|---|---|
+| Secrets | Gitleaks | 64 | un secret est détecté (`--exit-code 1`) |
+| SAST | Semgrep | 65 | un résultat de sévérité ERROR est trouvé (`--error`) |
+| Dépendances Node.js | `npm audit` | 66 | une vulnérabilité critique est trouvée (`--audit-level=critical`) |
+| Dépendances (complément) | OWASP Dependency-Check | 67 | une dépendance a un score CVSS de 9 ou plus (`--failOnCVSS 9`) |
+| Images Docker | Trivy | 68 | une vulnérabilité critique est trouvée (`--exit-code 1 --severity CRITICAL`) |
+
+### Étapes 64 à 66 : Gitleaks, Semgrep et npm audit
+
+Gitleaks, Semgrep et Trivy s'exécutent dans des conteneurs Docker, donc rien n'est à installer sur le serveur Jenkins.
+
+[À COMPLÉTER : résultat de chaque stage dans le build réussi]
+
+### Étape 67 : OWASP Dependency-Check
+
+Le rapport HTML et JSON est archivé dans les artefacts du build (`reports/`). La base de vulnérabilités NVD est téléchargée avec une clé d'API stockée dans un credential Jenkins (`nvd-api-key`), jamais dans le dépôt.
+
+**Exemple de dépendance vulnérable détectée** (ajoutée volontairement sur une branche de test) :
+
+```
+[À COMPLÉTER : package, version, identifiant CVE et score CVSS lus dans le rapport]
+```
+
+![Rapport Dependency-Check](captures/act4/67-dependency-check.png)
+
+### Étape 68 : scan des images avec Trivy
+
+Chaque image est scannée avec Trivy : un premier passage affiche le tableau des vulnérabilités HIGH et CRITICAL, un second échoue si une vulnérabilité CRITICAL corrigeable existe.
+
+[À COMPLÉTER : résumé du scan Trivy]
+
+### Étape 69 : le pipeline échoue sur une vulnérabilité critique ou un secret
+
+Chaque outil renvoie un code d'erreur dès qu'il détecte un secret ou une vulnérabilité critique : Jenkins arrête alors le pipeline à ce stage.
+
+**Pipeline réussi :**
+
+![Pipeline réussi](captures/act4/69-pipeline-reussi.png)
+
+**Pipeline volontairement échoué** (branche temporaire `demo-fail` avec `minimist@1.2.0`, une dépendance vulnérable) :
+
+![Pipeline échoué](captures/act4/69-pipeline-echoue.png)
+
+[À COMPLÉTER : nom du stage en échec et message d'erreur]
