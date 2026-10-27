@@ -29,3 +29,9 @@ h2 { display:inline-block; margin:24px 0 16px; border-bottom:2px solid var(--acc
 .timeline strong { display:block; color:var(--accent); }
 footer { margin-top:48px; padding:20px; text-align:center; color:var(--muted); border-top:1px solid var(--line); }
 @media (max-width:640px) { .hero { flex-direction:column; text-align:center; } }
+
+.contact-form { display: grid; gap: 0.5rem; max-width: 32rem; margin-top: 1rem; }
+.contact-form input, .contact-form textarea { padding: 0.5rem; font: inherit; border: 1px solid currentColor; border-radius: 6px; background: transparent; color: inherit; }
+.contact-form button { padding: 0.6rem 1rem; font: inherit; cursor: pointer; border-radius: 6px; }
+.form-success { color: #2e7d32; }
+.form-error { color: #c62828; }

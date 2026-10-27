@@ -1,3 +1,5 @@
+import ContactForm from "./ContactForm";
+
 export default function Contact() {
   return (
     <section id="contact">
@@ -7,6 +9,7 @@ export default function Contact() {
         <a href="mailto:wissalelkouk@gmail.com">Envoyer un e-mail</a>{" · "}
         <a href="https://github.com/wissalelkouk" target="_blank" rel="noopener noreferrer">GitHub</a>
       </p>
+      <ContactForm />
     </section>
   );
 }
