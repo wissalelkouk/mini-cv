@@ -1475,7 +1475,13 @@ npm test
       Tests  19 passed (19)
 ```
 
-![Tests frontend et API réussis](captures/act4/58-tests-front-api.png)
+**Tests du frontend :**
+
+![Tests frontend réussis](captures/act4/58-tests-front.png)
+
+**Tests de l'API :**
+
+![Tests API réussis](captures/act4/58-tests-api.png)
 
 ### Étape 59 : entrées invalides, injections et requêtes malformées
 
