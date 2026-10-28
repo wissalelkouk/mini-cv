@@ -1322,10 +1322,30 @@ for i in $(seq 1 7); do curl -s -o /dev/null -w "%{http_code}\n" -X POST http://
 
 **Exemple de réponse 429 :**
 
-```
-[À COMPLÉTER : coller ici la sortie de curl -i sur la requête refusée]
+wissal@wissal:~/mini-cv$ curl -i -X POST http://localhost:4000/api/contact -H "Content-Type: application/json" -d '{"name":"Wissal","email":"w@example.com","message":"Message de test long"}'
 HTTP/1.1 429 Too Many Requests
+Content-Security-Policy: default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';img-src 'self' data:;object-src 'none';script-src 'self';script-src-attr 'none';style-src 'self' https: 'unsafe-inline';upgrade-insecure-requests
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Resource-Policy: same-origin
+Origin-Agent-Cluster: ?1
+Referrer-Policy: no-referrer
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+X-Content-Type-Options: nosniff
+X-DNS-Prefetch-Control: off
+X-Download-Options: noopen
+X-Frame-Options: SAMEORIGIN
+X-Permitted-Cross-Domain-Policies: none
+X-XSS-Protection: 0
+Vary: Origin
 RateLimit-Policy: 5;w=900
+RateLimit: limit=5, remaining=0, reset=865
+Retry-After: 865
+Content-Type: application/json; charset=utf-8
+Content-Length: 71
+ETag: W/"47-krP0sGG8R3CSD6za1b4G60E2qxQ"
+Date: Wed, 28 Oct 2026 12:04:34 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
 
 {"status":"error","message":"Trop de requêtes, réessayez plus tard."}
 ```
