@@ -12,6 +12,7 @@ COPY . .
 ARG API_URL=http://api:4000
 ENV API_URL=$API_URL
 ENV NODE_OPTIONS=--max-old-space-size=1024
+ENV NODE_OPTIONS=--max-old-space-size=1024
 RUN npm run build
 
 # 3) Image finale, minimale

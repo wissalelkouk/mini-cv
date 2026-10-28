@@ -1,0 +1,98 @@
+Bringing machine 'ubuntu-tp' up with 'libvirt' provider...
+==> ubuntu-tp: Checking if box 'alvistack/ubuntu-24.04' version '20260108.1.1' is up to date...
+[fog][WARNING] Unrecognized arguments: libvirt_ip_command
+==> ubuntu-tp: Creating image (snapshot of base box volume).
+==> ubuntu-tp: Creating domain with the following settings...
+==> ubuntu-tp:  -- Name:              vagrant-ubuntu_ubuntu-tp
+==> ubuntu-tp:  -- Description:       Source: /home/wissal/mini-cv/vagrant-ubuntu/Vagrantfile
+==> ubuntu-tp:  -- Domain type:       kvm
+==> ubuntu-tp:  -- Cpus:              2
+==> ubuntu-tp:  -- Feature:           acpi
+==> ubuntu-tp:  -- Feature:           apic
+==> ubuntu-tp:  -- Feature:           pae
+==> ubuntu-tp:  -- Clock offset:      utc
+==> ubuntu-tp:  -- Memory:            4096M
+==> ubuntu-tp:  -- Base box:          alvistack/ubuntu-24.04
+==> ubuntu-tp:  -- Storage pool:      default
+==> ubuntu-tp:  -- Image(vda):        /var/lib/libvirt/images/vagrant-ubuntu_ubuntu-tp.img, virtio, 128G
+==> ubuntu-tp:  -- Disk driver opts:  cache='default'
+==> ubuntu-tp:  -- Graphics Type:     vnc
+==> ubuntu-tp:  -- Video Type:        cirrus
+==> ubuntu-tp:  -- Video VRAM:        16384
+==> ubuntu-tp:  -- Video 3D accel:    false
+==> ubuntu-tp:  -- Keymap:            en-us
+==> ubuntu-tp:  -- TPM Backend:       passthrough
+==> ubuntu-tp:  -- INPUT:             type=mouse, bus=ps2
+==> ubuntu-tp: Creating shared folders metadata...
+==> ubuntu-tp: Starting domain.
+==> ubuntu-tp: Domain launching with graphics connection settings...
+==> ubuntu-tp:  -- Graphics Port:      5900
+==> ubuntu-tp:  -- Graphics IP:        127.0.0.1
+==> ubuntu-tp:  -- Graphics Password:  Not defined
+==> ubuntu-tp:  -- Graphics Websocket: 5700
+==> ubuntu-tp: Waiting for domain to get an IP address...
+==> ubuntu-tp: Waiting for machine to boot. This may take a few minutes...
+    ubuntu-tp: SSH address: 192.168.121.43:22
+    ubuntu-tp: SSH username: vagrant
+    ubuntu-tp: SSH auth method: private key
+    ubuntu-tp: 
+    ubuntu-tp: Vagrant insecure key detected. Vagrant will automatically replace
+    ubuntu-tp: this with a newly generated keypair for better security.
+    ubuntu-tp: 
+    ubuntu-tp: Inserting generated public key within guest...
+    ubuntu-tp: Removing insecure key from the guest if it's present...
+    ubuntu-tp: Key inserted! Disconnecting and reconnecting using new SSH key...
+==> ubuntu-tp: Machine booted and ready!
+==> ubuntu-tp: Setting hostname...
+==> ubuntu-tp: Configuring and enabling network interfaces...
+==> ubuntu-tp: Running provisioner: ansible...
+    ubuntu-tp: Running ansible-playbook...
+[WARNING]: Deprecation warnings can be disabled by setting `deprecation_warnings=False` in ansible.cfg.
+[DEPRECATION WARNING]: The '--inventory-file' argument is deprecated. This feature will be removed from ansible-core version 2.23. Use -i or --inventory instead.
+
+PLAY [Déployer le DevSecOps Portfolio avec Docker Compose] *********************
+
+TASK [Gathering Facts] *********************************************************
+[WARNING]: Host 'ubuntu-tp' is using the discovered Python interpreter at '/usr/bin/python3.12', but future installation of another Python interpreter could cause a different interpreter to be discovered. See https://docs.ansible.com/ansible-core/2.20/reference_appendices/interpreter_discovery.html for more information.
+ok: [ubuntu-tp]
+
+TASK [Créer un swap de 2 Go (le build Next.js consomme de la mémoire)] *********
+changed: [ubuntu-tp]
+
+TASK [Installer Docker, Compose et Git] ****************************************
+changed: [ubuntu-tp]
+
+TASK [Démarrer et activer Docker] **********************************************
+ok: [ubuntu-tp]
+
+TASK [Ajouter l'utilisateur vagrant au groupe docker] **************************
+changed: [ubuntu-tp]
+
+TASK [Récupérer le dépôt] ******************************************************
+changed: [ubuntu-tp]
+
+TASK [Générer le fichier .env (jamais commité)] ********************************
+changed: [ubuntu-tp]
+
+TASK [Construire et lancer la pile Docker Compose] *****************************
+[ERROR]: Task failed: Failed to connect to the host via ssh: ssh: connect to host 192.168.121.43 port 22: No route to host
+
+Task failed.
+Origin: /home/wissal/mini-cv/ansible/playbook.yml:60:7
+
+58           RATE_LIMIT_MAX=5
+59
+60     - name: Construire et lancer la pile Docker Compose
+         ^ column 7
+
+<<< caused by >>>
+
+Failed to connect to the host via ssh: ssh: connect to host 192.168.121.43 port 22: No route to host
+
+fatal: [ubuntu-tp]: UNREACHABLE! => {"changed": false, "msg": "Task failed: Failed to connect to the host via ssh: ssh: connect to host 192.168.121.43 port 22: No route to host", "unreachable": true}
+
+PLAY RECAP *********************************************************************
+ubuntu-tp                  : ok=7    changed=5    unreachable=1    failed=0    skipped=0    rescued=0    ignored=0   
+
+Ansible failed to complete successfully. Any error output should be
+visible above. Please fix these errors and try again.
