@@ -1644,11 +1644,15 @@ Gitleaks, Semgrep et Trivy s'exécutent dans des conteneurs Docker, donc rien n'
 
 Le rapport HTML et JSON est archivé dans les artefacts du build (`reports/`). La base de vulnérabilités NVD est téléchargée avec une clé d'API stockée dans un credential Jenkins (`nvd-api-key`), jamais dans le dépôt.
 
-**Exemple de dépendance vulnérable détectée** (ajoutée volontairement sur une branche de test) :
+**Exemple de dépendance vulnérable détectée** (build Jenkins #12 : 716 dépendances analysées, une seule avec une vulnérabilité connue) :
 
 ```
-[À COMPLÉTER : package, version, identifiant CVE et score CVSS lus dans le rapport]
+deepmerge 4.3.1 | GHSA-gcqx-w48m-w2h4 | sévérité : low | score CVSS : 5.3
 ```
+
+Cette dépendance est transitive : elle est tirée par Jest (`jest` → `@jest/core` → `jest-config` → `deepmerge`) dans `portfolio-next`. C'est un outil de test (dépendance de développement), pas une bibliothèque utilisée à l'exécution du portfolio. Je ne la corrige pas moi-même : la mise à jour dépend de Jest. Je l'accepte pour l'instant, vu sa gravité faible, et je surveillerai les prochaines versions de Jest.
+
+Elle est inférieure au seuil d'échec du pipeline (`--failOnCVSS 9`) : elle est signalée dans le rapport, mais elle ne bloque pas le build. Seules les vulnérabilités critiques font échouer le pipeline.
 
 ![Rapport Dependency-Check](captures/act4/67-dependency-check.png)
 
