@@ -1621,7 +1621,14 @@ docker build -t devsecops-api:${GIT_SHA} -t devsecops-api:latest ./api
 Exemple d'images générées :
 
 ```
-[À COMPLÉTER : coller la sortie de docker images | grep devsecops avec les tags SHA]
+devsecops-api:78299f4            fce562113d80        882MB          247MB
+devsecops-api:dc1ed7f            9e7c41589a4b        882MB          247MB
+devsecops-api:f9a19f3            7814c183cc05        882MB          247MB
+devsecops-api:latest             7814c183cc05        882MB          247MB
+devsecops-portfolio:78299f4      0cef6180353f        334MB         85.6MB
+devsecops-portfolio:dc1ed7f      cd64328acae1        334MB         85.6MB
+devsecops-portfolio:f9a19f3      823a2bea5dd4        334MB         85.6MB
+devsecops-portfolio:latest       823a2bea5dd4        334MB         85.6MB
 ```
 
 ## 16. Pipeline DevSecOps Jenkins
@@ -1638,7 +1645,18 @@ Exemple d'images générées :
 
 Gitleaks, Semgrep et Trivy s'exécutent dans des conteneurs Docker, donc rien n'est à installer sur le serveur Jenkins.
 
-[À COMPLÉTER : résultat de chaque stage dans le build réussi]
+Résultat du build Jenkins #12 (tous les stages réussis) :
+
+| Stage | Durée | Résultat |
+|---|---|---|
+| Tests frontend | 1 min 18 s | réussi |
+| Tests API | 44 s | réussi |
+| Gitleaks (secrets) | 3 s | réussi (aucun secret détecté) |
+| Semgrep (SAST) | 15 s | réussi (aucun résultat de sévérité ERROR) |
+| npm audit | 8 s | réussi (aucune vulnérabilité critique) |
+| OWASP Dependency-Check | 43 s | réussi |
+| Build images Docker | 11 s | réussi |
+| Trivy (images) | 35 s | réussi |
 
 ### Étape 67 : OWASP Dependency-Check
 
@@ -1660,7 +1678,7 @@ Elle est inférieure au seuil d'échec du pipeline (`--failOnCVSS 9`) : elle est
 
 Chaque image est scannée avec Trivy : un premier passage affiche le tableau des vulnérabilités HIGH et CRITICAL, un second échoue si une vulnérabilité CRITICAL corrigeable existe.
 
-[À COMPLÉTER : résumé du scan Trivy]
+Build #12 : le stage Trivy se termine avec succès (35 s). Le tableau des paquets Node de l'image n'affiche aucune vulnérabilité (colonne à 0, légende « Clean (no security findings detected) »).
 
 ### Étape 69 : le pipeline échoue sur une vulnérabilité critique ou un secret
 
