@@ -93,9 +93,9 @@ pipeline {
         sh '''
           for img in devsecops-portfolio devsecops-api; do
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache/ \
-              aquasec/trivy:latest image --timeout 30m --exit-code 0 --severity HIGH,CRITICAL --ignore-unfixed --no-progress $img:${GIT_SHA}
+              aquasec/trivy:latest image --skip-db-update --timeout 10m --exit-code 0 --severity HIGH,CRITICAL --ignore-unfixed --no-progress $img:${GIT_SHA}
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache/ \
-              aquasec/trivy:latest image --timeout 30m --exit-code 1 --severity CRITICAL --ignore-unfixed --no-progress --quiet $img:${GIT_SHA}
+              aquasec/trivy:latest image --skip-db-update --timeout 10m --exit-code 1 --severity CRITICAL --ignore-unfixed --no-progress --quiet $img:${GIT_SHA}
           done
         '''
       }
