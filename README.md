@@ -1394,7 +1394,11 @@ docker compose ps
 ```
 
 ```
-[À COMPLÉTER : coller la sortie de docker compose ps avec db, api et frontend]
+NAME                 IMAGE                 COMMAND                  SERVICE     CREATED         STATUS                  PORTS
+cv-compose           cv-docker             "/docker-entrypoint.…"   portfolio   3 weeks ago     Up 35 hours             0.0.0.0:8082->80/tcp, [::]:8082->80/tcp
+devsecops-frontend   devsecops-portfolio   "docker-entrypoint.s…"   frontend    2 minutes ago   Up 2 minutes            0.0.0.0:3000->3000/tcp, [::]:3000->3000/tcp
+mini-cv-api-1        devsecops-api         "docker-entrypoint.s…"   api         2 minutes ago   Up 2 minutes (healthy)  0.0.0.0:4000->4000/tcp, [::]:4000->4000/tcp
+mini-cv-db-1         postgres:16-alpine    "docker-entrypoint.s…"   db          3 days ago      Up 2 minutes (healthy)  127.0.0.1:5432->5432/tcp
 ```
 
 ### Étape 54 : enregistrement des messages dans PostgreSQL
@@ -1558,7 +1562,7 @@ ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook \
   ../ansible/playbook.yml
 ```
 
-**Portfolio accessible sur la VM créée par Vagrant (`http://192.168.56.10:3000`, via un tunnel SSH) :**
+**Portfolio accessible sur la VM créée par Vagrant (via un tunnel SSH vers la VM créée par Vagrant) :**
 
 ![Portfolio déployé par Ansible](captures/act4/43-portfolio-vm.png)
 
@@ -1577,6 +1581,8 @@ Résultat : `vagrant up` crée la VM, configure Ansible, installe Docker et dép
 
 ![Automatisation complète avec vagrant up](captures/act4/44-vagrant-up-complet.png)
 
+Cette capture montre le dernier passage du playbook (`vagrant provision`) sur la VM créée par `vagrant up` : `ok=9`, `failed=0`, avec la tâche de construction de la pile en `changed` et le portfolio qui répond. Le premier passage avait été interrompu par un manque de mémoire de ma machine (voir étape 45).
+
 ### Étape 45 : destruction et recréation de la VM
 
 ```
@@ -1585,13 +1591,9 @@ vagrant up
 vagrant ssh -c "curl -sI http://localhost:3000 | head -1; docker ps --format '{{.Names}}\t{{.Status}}'"
 ```
 
-Après la destruction, la VM est entièrement recréée et le portfolio est redéployé automatiquement, sans intervention manuelle.
+J'ai détruit l'ancienne VM puis recréé la VM avec `vagrant up`. Ansible l'a provisionnée automatiquement : création du swap, installation de Docker, de Compose et de Git, clonage du dépôt, génération du `.env`, puis `docker compose up -d --build`. Après le déploiement, les trois conteneurs (`db`, `api`, `frontend`) étaient `Up`, le front répondait `200` et l'API répondait `{"status":"ok"}`.
 
-![vagrant destroy](captures/act4/45-vagrant-destroy.png)
-
-![Portfolio redéployé après vagrant up](captures/act4/45-portfolio-redeploye.png)
-
-[À COMPLÉTER : durée totale mesurée du `vagrant up` après la destruction]
+**Limite rencontrée.** Je n'ai pas pu refaire un cycle complet `destroy` puis `up` sans interruption. Ma machine hôte n'a que 2,5 Go de RAM pour une VM imbriquée, et la construction de l'image du front est la partie la plus lourde. Le premier passage a été interrompu, puis le noyau de l'hôte a arrêté la VM par manque de mémoire (`Out of memory: Killed process ... (qemu-system-x86)` dans `dmesg`). Je l'ai redémarrée et relancé le provisioning (`vagrant provision`) ; le playbook étant idempotent, il a repris où il s'était arrêté et s'est terminé sans erreur (capture de l'étape 44). Je n'ai donc pas de durée mesurée pour un `vagrant up` complet sans interruption.
 
 ## 15. Jenkins : tests et images Docker
 
