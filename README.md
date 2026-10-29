@@ -1662,17 +1662,17 @@ Résultat du build Jenkins #12 (tous les stages réussis) :
 
 Le rapport HTML et JSON est archivé dans les artefacts du build (`reports/`). La base de vulnérabilités NVD est téléchargée avec une clé d'API stockée dans un credential Jenkins (`nvd-api-key`), jamais dans le dépôt.
 
-**Exemple de dépendance vulnérable détectée** (build Jenkins #12 : 716 dépendances analysées, une seule avec une vulnérabilité connue) :
+**Exemple de dépendance vulnérable détectée** (build Jenkins #8) :
 
 ```
-deepmerge 4.3.1 | GHSA-gcqx-w48m-w2h4 | sévérité : low | score CVSS : 5.3
+deepmerge-ts 7.1.5 | GHSA-ggr8-5vv4-36mx | score CVSS : 10.0
 ```
 
-Cette dépendance est transitive : elle est tirée par Jest (`jest` → `@jest/core` → `jest-config` → `deepmerge`) dans `portfolio-next`. C'est un outil de test (dépendance de développement), pas une bibliothèque utilisée à l'exécution du portfolio. Je ne la corrige pas moi-même : la mise à jour dépend de Jest. Je l'accepte pour l'instant, vu sa gravité faible, et je surveillerai les prochaines versions de Jest.
+Le score dépasse le seuil `--failOnCVSS 9` : Dependency-Check renvoie le code de sortie 15 et le pipeline s'arrête (voir étape 69). Le premier passage de ce stage a duré 1 h 33 min (initialisation de la base de vulnérabilités), contre 43 s au build #12.
 
-Elle est inférieure au seuil d'échec du pipeline (`--failOnCVSS 9`) : elle est signalée dans le rapport, mais elle ne bloque pas le build. Seules les vulnérabilités critiques font échouer le pipeline.
+Au build #12, cette vulnérabilité n'apparaît plus : 716 dépendances analysées, une seule avec une vulnérabilité connue, `deepmerge` 4.3.1 (GHSA-gcqx-w48m-w2h4, sévérité faible, CVSS 5.3), tirée par Jest (`jest` → `@jest/core` → `jest-config`) dans `portfolio-next`. C'est une dépendance de développement transitive, sous le seuil d'échec ; je l'accepte pour l'instant.
 
-![Rapport Dependency-Check](captures/act4/67-dependency-check.png)
+![Dépendance critique détectée par Dependency-Check](captures/act4/67-dependency-check.png)
 
 ### Étape 68 : scan des images avec Trivy
 
@@ -1688,8 +1688,16 @@ Chaque outil renvoie un code d'erreur dès qu'il détecte un secret ou une vuln�
 
 ![Pipeline réussi](captures/act4/69-pipeline-reussi.png)
 
-**Pipeline volontairement échoué** (branche temporaire `demo-fail` avec `minimist@1.2.0`, une dépendance vulnérable) :
+**Pipeline échoué** (build #8 : échec réel, provoqué par une vulnérabilité critique détectée par OWASP Dependency-Check, sans manipulation volontaire) :
 
 ![Pipeline échoué](captures/act4/69-pipeline-echoue.png)
 
-[À COMPLÉTER : nom du stage en échec et message d'erreur]
+Stage en échec : **OWASP Dependency-Check** (build #8). Les stages « Build images Docker » et « Trivy (images) » n'ont pas été exécutés : aucune image n'est construite quand une vulnérabilité critique est détectée.
+
+```
+One or more dependencies were identified with vulnerabilities that have a CVSS score greater than or equal to '9.0':
+
+deepmerge-ts:7.1.5 (pkg:npm/deepmerge-ts@7.1.5, ...): GHSA-ggr8-5vv4-36mx(10.0)
+
+script returned exit code 15
+```
