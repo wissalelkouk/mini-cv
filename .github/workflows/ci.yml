@@ -9,12 +9,18 @@ permissions:
   contents: read
 
 jobs:
+  # ============================================================
+  # Tests frontend (Q70)
+  # ============================================================
   test-frontend:
     name: Tests frontend (Next.js)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: portfolio-next
+    env:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,9 +32,14 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
-    test-api:
+
+  # ============================================================
+  # Tests API (Q70)
+  # ============================================================
+  test-api:
     name: Tests API (Express)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: api
@@ -42,3 +53,85 @@ jobs:
       - run: npm ci
       - run: npx prisma generate
       - run: npm test
+
+  # ============================================================
+  # Q71.1 — Scan de secrets (Gitleaks)
+  # fetch-depth: 0 + permission pull-requests: read pour les PR
+  # ============================================================
+  secrets-scan:
+    name: Scan de secrets (Gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read  # Nécessaire pour scanner les PR
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================================
+  # Q71.2 — SAST (Semgrep)
+  # Token SEMGREP_APP_TOKEN dans les secrets du repo
+  # ============================================================
+  sast-semgrep:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: semgrep/semgrep
+    permissions:
+      contents: read
+      security-events: write  # Pour uploader le SARIF
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep scan
+        run: |
+          semgrep scan \
+            --config=p/ci \
+            --config=p/javascript \
+            --config=p/typescript \
+            --config=p/owasp-top-ten \
+            --sarif --output=semgrep.sarif \
+            --error
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  # ============================================================
+  # Q71.3 — Contrôle des dépendances (npm audit)
+  # continue-on-error pour l'instant, à durcir en Q81
+  # ============================================================
+  dependencies-audit:
+    name: Audit dépendances (npm audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: portfolio-next
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: portfolio-next/package-lock.json
+      - run: npm ci
+      - name: npm audit (frontend)
+        run: npm audit --audit-level=high
+        continue-on-error: true
+      - name: npm audit (API)
+        working-directory: api
+        run: |
+          npm ci
+          npm audit --audit-level=high
+        continue-on-error: true
