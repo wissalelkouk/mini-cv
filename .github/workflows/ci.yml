@@ -82,7 +82,7 @@ jobs:
             --config=p/javascript \
             --config=p/typescript \
             --config=p/owasp-top-ten \
-            --sarif --output=semgrep.sarif \
+            --sarif-output=semgrep.sarif \
             --error
         env:
           SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
