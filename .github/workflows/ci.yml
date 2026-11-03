@@ -118,10 +118,13 @@ jobs:
           npm audit --audit-level=high
         continue-on-error: true
 
-  build-images:
-    name: Build Docker images
+  build-and-scan-images:
+    name: Build and scan Docker images (Trivy)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
@@ -140,35 +143,45 @@ jobs:
           push: false
           load: true
           tags: portfolio-api:latest
-
-  scan-images:
-    name: Scan Docker images (Trivy)
-    runs-on: ubuntu-latest
-    needs: build-images
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - name: Scan Frontend image
+      - name: Trivy frontend (rapport lisible)
         uses: aquasecurity/trivy-action@0.24.0
         with:
           image-ref: portfolio-frontend:latest
-          format: 'sarif'
-          output: 'trivy-frontend.sarif'
-          severity: 'CRITICAL,HIGH'
+          format: table
+          severity: CRITICAL,HIGH
           exit-code: '0'
-      - name: Scan API image
+      - name: Trivy API (rapport lisible)
         uses: aquasecurity/trivy-action@0.24.0
         with:
           image-ref: portfolio-api:latest
-          format: 'sarif'
-          output: 'trivy-api.sarif'
-          severity: 'CRITICAL,HIGH'
+          format: table
+          severity: CRITICAL,HIGH
           exit-code: '0'
-      - name: Upload Trivy scan results
+      - name: Trivy frontend (SARIF)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: portfolio-frontend:latest
+          format: sarif
+          output: trivy-frontend.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+      - name: Trivy API (SARIF)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: portfolio-api:latest
+          format: sarif
+          output: trivy-api.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+      - name: Upload SARIF frontend
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: '.'
-          category: trivy
+          sarif_file: trivy-frontend.sarif
+          category: trivy-frontend
+      - name: Upload SARIF API
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-api.sarif
+          category: trivy-api
