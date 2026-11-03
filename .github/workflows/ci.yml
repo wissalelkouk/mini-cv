@@ -56,7 +56,6 @@ jobs:
 
   # ============================================================
   # Q71.1 — Scan de secrets (Gitleaks)
-  # fetch-depth: 0 + permission pull-requests: read pour les PR
   # ============================================================
   secrets-scan:
     name: Scan de secrets (Gitleaks)
@@ -64,7 +63,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      pull-requests: read  # Nécessaire pour scanner les PR
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -76,7 +75,6 @@ jobs:
 
   # ============================================================
   # Q71.2 — SAST (Semgrep)
-  # Token SEMGREP_APP_TOKEN dans les secrets du repo
   # ============================================================
   sast-semgrep:
     name: SAST (Semgrep)
@@ -86,7 +84,7 @@ jobs:
       image: semgrep/semgrep
     permissions:
       contents: read
-      security-events: write  # Pour uploader le SARIF
+      security-events: write
     steps:
       - uses: actions/checkout@v4
       - name: Semgrep scan
@@ -109,7 +107,6 @@ jobs:
 
   # ============================================================
   # Q71.3 — Contrôle des dépendances (npm audit)
-  # continue-on-error pour l'instant, à durcir en Q81
   # ============================================================
   dependencies-audit:
     name: Audit dépendances (npm audit)
@@ -135,3 +132,64 @@ jobs:
           npm ci
           npm audit --audit-level=high
         continue-on-error: true
+
+  # ============================================================
+  # Q72 — Construction des images Docker
+  # ============================================================
+  build-images:
+    name: Build Docker images
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./portfolio-next
+          push: false
+          load: true
+          tags: portfolio-frontend:latest
+      - name: Build API
+        uses: docker/build-push-action@v5
+        with:
+          context: ./api
+          push: false
+          load: true
+          tags: portfolio-api:latest
+
+  # ============================================================
+  # Q73 — Scan des images avec Trivy
+  # ============================================================
+  scan-images:
+    name: Scan Docker images (Trivy)
+    runs-on: ubuntu-latest
+    needs: build-images
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Scan Frontend image
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: portfolio-frontend:latest
+          format: 'sarif'
+          output: 'trivy-frontend.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+      - name: Scan API image
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: portfolio-api:latest
+          format: 'sarif'
+          output: 'trivy-api.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: '.'
+          category: trivy
