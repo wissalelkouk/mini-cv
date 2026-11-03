@@ -9,9 +9,6 @@ permissions:
   contents: read
 
 jobs:
-  # ============================================================
-  # Tests frontend (Q70)
-  # ============================================================
   test-frontend:
     name: Tests frontend (Next.js)
     runs-on: ubuntu-latest
@@ -33,9 +30,6 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  # ============================================================
-  # Tests API (Q70)
-  # ============================================================
   test-api:
     name: Tests API (Express)
     runs-on: ubuntu-latest
@@ -54,9 +48,6 @@ jobs:
       - run: npx prisma generate
       - run: npm test
 
-  # ============================================================
-  # Q71.1 — Scan de secrets (Gitleaks)
-  # ============================================================
   secrets-scan:
     name: Scan de secrets (Gitleaks)
     runs-on: ubuntu-latest
@@ -73,9 +64,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ============================================================
-  # Q71.2 — SAST (Semgrep)
-  # ============================================================
   sast-semgrep:
     name: SAST (Semgrep)
     runs-on: ubuntu-latest
@@ -105,9 +93,6 @@ jobs:
           sarif_file: semgrep.sarif
           category: semgrep
 
-  # ============================================================
-  # Q71.3 — Contrôle des dépendances (npm audit)
-  # ============================================================
   dependencies-audit:
     name: Audit dépendances (npm audit)
     runs-on: ubuntu-latest
@@ -133,9 +118,6 @@ jobs:
           npm audit --audit-level=high
         continue-on-error: true
 
-  # ============================================================
-  # Q72 — Construction des images Docker
-  # ============================================================
   build-images:
     name: Build Docker images
     runs-on: ubuntu-latest
@@ -159,9 +141,6 @@ jobs:
           load: true
           tags: portfolio-api:latest
 
-  # ============================================================
-  # Q73 — Scan des images avec Trivy
-  # ============================================================
   scan-images:
     name: Scan Docker images (Trivy)
     runs-on: ubuntu-latest
