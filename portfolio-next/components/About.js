@@ -8,7 +8,7 @@ export default function About() {
         <p className="tag">DevSecOps Portfolio</p>
         <h1>Wissal Elkouk</h1>
         <p className="role">Étudiante en master DevOps Cloud</p>
-        <p>Passionnée par l'automatisation, la sécurité des systèmes et les infrastructures cloud.</p>
+        <p>passionnée par l&apos;automatisation, la sécurité des systèmes et les infrastructures cloud.</p>
       </div>
     </section>
   );
