@@ -119,7 +119,7 @@ jobs:
         working-directory: release
         run: |
           npm ci
-          npm audit --audit-level=high
+          node ../.github/scripts/audit-release.js
 
   build-and-scan-images:
     name: Build and scan Docker images (Trivy)
