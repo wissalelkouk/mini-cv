@@ -1,11 +1,11 @@
 # 1) Installation des dependances
-FROM node:22-alpine AS deps
+FROM node:25-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 
 # 2) Build de l'application
-FROM node:22-alpine AS build
+FROM node:25-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -16,7 +16,7 @@ ENV NODE_OPTIONS=--max-old-space-size=1024
 RUN npm run build
 
 # 3) Image finale, minimale
-FROM node:22-alpine AS run
+FROM node:25-alpine AS run
 WORKDIR /app
 ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
 COPY --from=build /app/.next/standalone ./
