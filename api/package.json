@@ -10,7 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.3",
+    "@prisma/client": "^7.10.1",
     "cors": "^2.8.6",
     "express": "^4.22.3",
     "express-rate-limit": "^8.7.1",
