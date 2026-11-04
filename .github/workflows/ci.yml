@@ -115,6 +115,11 @@ jobs:
         run: |
           npm ci
           npm audit --audit-level=high
+      - name: npm audit (release)
+        working-directory: release
+        run: |
+          npm ci
+          npm audit --audit-level=high
 
   build-and-scan-images:
     name: Build and scan Docker images (Trivy)
