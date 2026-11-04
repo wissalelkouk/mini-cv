@@ -144,44 +144,50 @@ jobs:
           load: true
           tags: portfolio-api:latest
       - name: Trivy frontend (rapport lisible)
-        uses: aquasecurity/trivy-action@0.35.0
-        with:
-          image-ref: portfolio-frontend:latest
-          format: table
-          severity: CRITICAL,HIGH
-          exit-code: '0'
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v trivy-cache:/root/.cache \
+            ghcr.io/aquasecurity/trivy:0.69.3 image \
+            --severity CRITICAL,HIGH --exit-code 0 \
+            portfolio-frontend:latest
       - name: Trivy API (rapport lisible)
-        uses: aquasecurity/trivy-action@0.35.0
-        with:
-          image-ref: portfolio-api:latest
-          format: table
-          severity: CRITICAL,HIGH
-          exit-code: '0'
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v trivy-cache:/root/.cache \
+            ghcr.io/aquasecurity/trivy:0.69.3 image \
+            --severity CRITICAL,HIGH --exit-code 0 \
+            portfolio-api:latest
       - name: Trivy frontend (SARIF)
-        uses: aquasecurity/trivy-action@0.35.0
-        with:
-          image-ref: portfolio-frontend:latest
-          format: sarif
-          output: trivy-frontend.sarif
-          severity: CRITICAL,HIGH
-          exit-code: '0'
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v trivy-cache:/root/.cache \
+            -v "$PWD":/out \
+            ghcr.io/aquasecurity/trivy:0.69.3 image \
+            --severity CRITICAL,HIGH --exit-code 0 \
+            --format sarif --output /out/trivy-frontend.sarif \
+            portfolio-frontend:latest
       - name: Trivy API (SARIF)
-        uses: aquasecurity/trivy-action@0.35.0
-        with:
-          image-ref: portfolio-api:latest
-          format: sarif
-          output: trivy-api.sarif
-          severity: CRITICAL,HIGH
-          exit-code: '0'
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v trivy-cache:/root/.cache \
+            -v "$PWD":/out \
+            ghcr.io/aquasecurity/trivy:0.69.3 image \
+            --severity CRITICAL,HIGH --exit-code 0 \
+            --format sarif --output /out/trivy-api.sarif \
+            portfolio-api:latest
       - name: Upload SARIF frontend
+        if: always() && hashFiles('trivy-frontend.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
         with:
           sarif_file: trivy-frontend.sarif
           category: trivy-frontend
       - name: Upload SARIF API
+        if: always() && hashFiles('trivy-api.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
         with:
           sarif_file: trivy-api.sarif
           category: trivy-api
