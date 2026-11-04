@@ -1706,63 +1706,6 @@ script returned exit code 15
 ```
 ## Activité 5 : CI/CD sécurisé
 
-Pipeline GitHub Actions pour le projet : `portfolio-next` (frontend Next.js), `api` (Express + Prisma) et `release` (semantic-release).
+Pipeline GitHub Actions (tests, scan des secrets, SAST, audit des dépendances, Trivy, CodeQL, Dependabot, protection de branche, semantic-release).
 
-Workflows présents dans `.github/workflows/` : `ci.yml`, `commits.yml`, `release.yml`, plus CodeQL et Dependabot.
-
-Les captures sont à placer dans `captures/act5/` avec les noms ci-dessous.
-
-### 1. Tests CI (tâche 70)
-`ci.yml` lance les tests du frontend et de l'API à chaque `push` et `pull_request`, avec des permissions minimales (`contents: read`, tâche 76).
-
-![Jobs de tests verts](captures/act5/01-actions-tests.png)
-
-### 2. Sécurité du pipeline (tâches 71, 73, 76)
-| Contrôle | Job | Outil |
-|---|---|---|
-| Scan des secrets | `secrets-scan` | Gitleaks |
-| SAST | `sast-semgrep` | Semgrep |
-| Dépendances | `dependencies-audit` | `npm audit` (bloquant) |
-| Images | `build-and-scan-images` | Trivy |
-
-![Jobs de sécurité](captures/act5/02-security-jobs.png)
-
-### 3. Dockerfiles et images (tâches 72, 85 à 89)
-| Mesure | Avant | Après (multi-stage) |
-|---|---|---|
-| Taille de l'image | … | … |
-| Temps de build | … | … |
-| Vulnérabilités (Trivy) | … | … |
-
-![Avant / après](captures/act5/03-docker-avant-apres.png)
-
-### 4. CodeQL, Semgrep et Dependabot (tâches 74, 75)
-![Dependabot](captures/act5/04-dependabot.png)
-
-Comparaison CodeQL / Semgrep : à compléter (couverture, faux positifs, intégration).
-
-### 5. Git workflow et release (tâches 79 à 84)
-- `main` protégée par un ruleset : Pull Request obligatoire et contrôles obligatoires.
-- Conventional Commits vérifiés en CI (`commits.yml`).
-- semantic-release : une release est créée à la fusion d'un commit `fix:` ou `feat:`.
-
-![PR bloquée par l'audit](captures/act5/05-pr23-bloquee.png)
-![PR débloquée](captures/act5/06-pr23-verte.png)
-![Page Releases](captures/act5/07-releases.png)
-
-### 6. Exception d'audit documentée
-| Point | Contenu |
-|---|---|
-| Constat | 1 alerte high (`undici`) et 36 moderate, toutes sous `node_modules/npm/node_modules/` |
-| Origine | `npm@11.21.1` embarqué dans `@semantic-release/npm@13.2.0`, dépendance de `semantic-release@25.0.9` |
-| Pas de correction possible | `npm audit fix` ne modifie pas un paquet embarqué ; un override vers `npm@12.2.1` n'a rien changé |
-| Pourquoi c'est acceptable | `.releaserc.json` ne charge que `commit-analyzer`, `release-notes-generator` et `github` : le plugin npm n'est pas utilisé (lecture de la configuration, pas test d'exécution) |
-| Garde-fou | `.github/scripts/audit-release.js` reste bloquant pour toute autre alerte high/critical et affiche ce qu'il ignore |
-
-![Étape npm audit (release)](captures/act5/08-audit-release.png)
-
-### 7. Harbor, SBOM, Cosign, SLSA (tâches 90 à 105)
-À compléter.
-
-### 8. Pinning par SHA et comparaison avec Jenkins (tâches 77, 78)
-À compléter.
+Détail et captures : [act5/README.md](act5/README.md)
