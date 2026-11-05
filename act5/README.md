@@ -15,7 +15,8 @@ Pipeline GitHub Actions pour `portfolio-next` (frontend Next.js), `api` (Express
 | 78 | Comparaison avec Jenkins | Fait |
 | 79 à 83 | Git workflow, protection de `main`, Conventional Commits, SemVer | Fait (contrôle Conventional Commits à ajouter aux contrôles requis) |
 | 84 | semantic-release | Configuré, capture de la release à ajouter |
-| 85 à 89 | Mesures, multi-stage, Buildx, multi-architecture | À faire |
+| 85 à 87 | Mesures avant/après, Dockerfile multi-stage de l'API | Fait |
+| 88, 89 | Buildx, image multi-architecture | À faire |
 | 90 à 95 | Harbor | À faire |
 | 96 à 105 | SBOM, Cosign, attestations, SLSA, attaque simulée | À faire |
 
@@ -173,9 +174,13 @@ Versions `MAJOR.MINOR.PATCH` : `fix` donne un PATCH, `feat` un MINOR, `feat!` ou
 
 `release.yml` lance semantic-release à chaque push sur `main` (plugins `commit-analyzer`, `release-notes-generator`, `github`). Il n'écrit aucun commit sur `main`, car le ruleset l'interdit : le changelog est dans la note de la release GitHub. Seul ce job reçoit `contents: write`. Les outils sont installés par `npm ci` depuis un `package-lock.json` verrouillé.
 
-Le premier run est vert, mais ne publie rien tant qu'aucun commit `feat:` ou `fix:` n'est arrivé sur `main`. Les runs rouges de Dependabot (`/release` et `/portfolio-next`) sont visibles dans la même liste.
+Le workflow Release s'exécute à chaque fusion sur `main`. Il publie une version seulement si un commit `feat:` ou `fix:` est arrivé : la fusion de la PR #24 (`fix: remove duplicated NODE_OPTIONS in frontend Dockerfile`) a produit le tag `v1.0.0` (run Release #2, commit `1a4c004`). Les autres fusions ne contiennent que des commits `ci:`, `docs:` ou `build:` : leur run est vert et ne publie rien, ce qui est le comportement attendu.
 
-![Release et runs Dependabot](captures/23-release-workflow-et-dependabot.png)
+![Runs du workflow Release](captures/31-release-workflow-runs.png)
+
+Les runs « Dependabot Updates » en échec sur `/release` (`undici`, `minimatch`) portent sur les mêmes paquets que l'exception d'audit de la section 6.
+
+![CI, Release et Dependabot après la PR #30](captures/32-ci-release-dependabot-main.png)
 
 À compléter : capture de la page Releases (tag `v1.0.0`).
 
@@ -210,18 +215,27 @@ Semgrep a signalé les 16 références par tag (règle `github-actions-mutable-a
 | Intégration aux branches | pas de lien avec les règles de fusion | contrôles obligatoires via le ruleset |
 | Sécurité | secrets et plugins à gérer sur la VM | permissions du jeton par job, actions épinglables par SHA |
 
-## 11. Dockerfiles : mesures avant/après (tâches 85 à 89)
+## 11. Dockerfiles : mesures avant/après (tâches 85 à 87)
 
-Le Dockerfile du frontend est déjà multi-stage (`deps`, `build`, `run`). Celui de l'API est en une seule étape.
+Le workflow `measure-images.yml` (déclenchement manuel) construit les quatre images sans cache, relève leur taille et leur temps de build, puis les scanne avec Trivy 0.69.3 (vulnérabilités HIGH et CRITICAL). Toutes les mesures sont faites dans les mêmes conditions, sur un runner GitHub : les temps ne sont pas comparables à ceux d'une VM locale.
+
+- **API** : le Dockerfile d'origine (une seule étape, conservé dans `act5/measures/Dockerfile.api-before`) est comparé au Dockerfile multi-stage actuel (`api/Dockerfile`).
+- **Frontend** : le Dockerfile du frontend était déjà multi-stage. L'état « avant » est un Dockerfile mono-étape de référence (image `node:22`, `act5/measures/Dockerfile.frontend-before`), écrit pour la comparaison.
 
 | Image | Taille | Temps de build | HIGH | CRITICAL |
 |---|---|---|---|---|
-| API avant | 882 Mo | à compléter | à compléter | à compléter |
-| API après | à compléter | à compléter | à compléter | à compléter |
-| Frontend avant | à compléter | à compléter | à compléter | à compléter |
-| Frontend après | 334 Mo | 7 min 02 (sans cache) | à compléter | à compléter |
+| API avant (mono-étape) | 564 Mo | 18 s | 45 | 1 |
+| API après (multi-stage) | 460 Mo | 15 s | 45 | 1 |
+| Frontend avant (référence mono-étape) | 1 932 Mo | 75 s | 528 | 20 |
+| Frontend après (multi-stage) | 223 Mo | 64 s | 10 | 0 |
 
-À faire : Dockerfile multi-stage de l'API, BuildKit/Buildx, image multi-architecture (`amd64`, `arm64`) et sortie de `docker buildx imagetools inspect`.
+![Résultat du workflow de mesure](captures/30-mesure-images.png)
+
+Le multi-stage réduit fortement l'image du frontend : la compilation de Next.js se fait dans une étape intermédiaire et l'image finale ne contient que le résultat (`standalone`). Pour l'API, le gain de taille est modeste (environ 18 %) et le nombre de vulnérabilités est identique : elles viennent de l'image de base Debian et des dépendances, que le multi-stage ne modifie pas. Les totaux comptent des entrées du rapport Trivy, pas des CVE uniques.
+
+Vérification de démarrage : l'image multi-stage de l'API a été lancée avec `docker compose` et sa base PostgreSQL. Les deux conteneurs sont restés `healthy` pendant plusieurs heures, la migration Prisma s'est appliquée (`prisma migrate deploy` s'exécute au démarrage) et le serveur répond sur le port 4000 (en-têtes Helmet présents ; la route `/health` n'existe pas, la réponse est un 404 JSON).
+
+À faire : BuildKit/Buildx, image multi-architecture (`amd64`, `arm64`) et sortie de `docker buildx imagetools inspect`.
 
 ## 12. Registre privé Harbor (tâches 90 à 95)
 
