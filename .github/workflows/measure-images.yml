@@ -1,0 +1,41 @@
+name: Measure images
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    name: Measure images (before/after)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Measure
+        run: |
+          echo "| Image | Taille (Mo) | Build (s) | HIGH | CRITICAL |" > summary.md
+          echo "|---|---|---|---|---|" >> summary.md
+          measure() {
+            name="$1"; file="$2"; ctx="$3"
+            start=$(date +%s)
+            docker build --no-cache -f "$file" -t "$name" "$ctx"
+            end=$(date +%s)
+            size=$(docker image inspect -f '{{.Size}}' "$name")
+            mb=$((size / 1024 / 1024))
+            json=$(docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -v trivy-cache:/root/.cache \
+              ghcr.io/aquasecurity/trivy:0.69.3 image --quiet \
+              --format json --severity HIGH,CRITICAL "$name")
+            high=$(echo "$json" | jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")] | length')
+            crit=$(echo "$json" | jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length')
+            echo "| $name | $mb | $((end - start)) | $high | $crit |" >> summary.md
+          }
+          measure api:before act5/measures/Dockerfile.api-before api
+          measure api:after api/Dockerfile api
+          measure frontend:before act5/measures/Dockerfile.frontend-before portfolio-next
+          measure frontend:after portfolio-next/Dockerfile portfolio-next
+          cat summary.md
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
