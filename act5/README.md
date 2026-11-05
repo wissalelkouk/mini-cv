@@ -14,7 +14,7 @@ Pipeline GitHub Actions pour `portfolio-next` (frontend Next.js), `api` (Express
 | 76, 77 | Permissions, pinning par SHA | Fait |
 | 78 | Comparaison avec Jenkins | Fait |
 | 79 à 83 | Git workflow, protection de `main`, Conventional Commits, SemVer | Fait (contrôle Conventional Commits à ajouter aux contrôles requis) |
-| 84 | semantic-release | Configuré, capture de la release à ajouter |
+| 84 | semantic-release | Fait |
 | 85 à 87 | Mesures avant/après, Dockerfile multi-stage de l'API | Fait |
 | 88, 89 | Buildx, image multi-architecture | À faire |
 | 90 à 95 | Harbor | À faire |
@@ -182,7 +182,10 @@ Les runs « Dependabot Updates » en échec sur `/release` (`undici`, `minimatch
 
 ![CI, Release et Dependabot après la PR #30](captures/32-ci-release-dependabot-main.png)
 
-À compléter : capture de la page Releases (tag `v1.0.0`).
+La PR #23 (`fix(deps): update release dependencies and audit them in ci`) a ensuite produit le tag `v1.0.1`, une version PATCH (commit de type `fix`), avec une note « Bug Fixes » générée automatiquement. La page Releases liste `v1.0.0` et `v1.0.1`.
+
+![Page Releases](captures/28-releases-page.png)
+![Tags du dépôt](captures/29-git-tags.png)
 
 ## 8. Permissions du `GITHUB_TOKEN` (tâche 76)
 
