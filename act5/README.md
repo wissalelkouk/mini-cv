@@ -16,7 +16,7 @@ Pipeline GitHub Actions pour `portfolio-next` (frontend Next.js), `api` (Express
 | 79 à 83 | Git workflow, protection de `main`, Conventional Commits, SemVer | Fait (contrôle Conventional Commits à ajouter aux contrôles requis) |
 | 84 | semantic-release | Fait |
 | 85 à 87 | Mesures avant/après, Dockerfile multi-stage de l'API | Fait |
-| 88, 89 | Buildx, image multi-architecture | À faire |
+| 88, 89 | Buildx, image multi-architecture | Fait |
 | 90 à 95 | Harbor | À faire |
 | 96 à 105 | SBOM, Cosign, attestations, SLSA, attaque simulée | À faire |
 
@@ -218,7 +218,7 @@ Semgrep a signalé les 16 références par tag (règle `github-actions-mutable-a
 | Intégration aux branches | pas de lien avec les règles de fusion | contrôles obligatoires via le ruleset |
 | Sécurité | secrets et plugins à gérer sur la VM | permissions du jeton par job, actions épinglables par SHA |
 
-## 11. Dockerfiles : mesures avant/après (tâches 85 à 87)
+## 11. Optimisation des images (tâches 85 à 89)
 
 Le workflow `measure-images.yml` (déclenchement manuel) construit les quatre images sans cache, relève leur taille et leur temps de build, puis les scanne avec Trivy 0.69.3 (vulnérabilités HIGH et CRITICAL). Toutes les mesures sont faites dans les mêmes conditions, sur un runner GitHub : les temps ne sont pas comparables à ceux d'une VM locale.
 
@@ -238,7 +238,50 @@ Le multi-stage réduit fortement l'image du frontend : la compilation de Next.js
 
 Vérification de démarrage : l'image multi-stage de l'API a été lancée avec `docker compose` et sa base PostgreSQL. Les deux conteneurs sont restés `healthy` pendant plusieurs heures, la migration Prisma s'est appliquée (`prisma migrate deploy` s'exécute au démarrage) et le serveur répond sur le port 4000 (en-têtes Helmet présents ; la route `/health` n'existe pas, la réponse est un 404 JSON).
 
-À faire : BuildKit/Buildx, image multi-architecture (`amd64`, `arm64`) et sortie de `docker buildx imagetools inspect`.
+### BuildKit et Buildx (tâche 88)
+
+BuildKit est utilisé pour tous les builds. En local : Buildx v0.37.1, builder `default` (driver `docker`), BuildKit v0.33.0, plateforme `linux/amd64`. Dans la CI, `docker/setup-buildx-action` crée un builder `docker-container`.
+
+![docker buildx version et docker buildx ls](captures/33-buildx.png)
+
+### Image multi-architecture (tâche 89)
+
+Le workflow `multiarch.yml` (déclenchement manuel) construit l'image de l'API pour `linux/amd64` et `linux/arm64` (émulation QEMU sur un runner GitHub) et la publie sur GitHub Container Registry : `ghcr.io/wissalelkouk/mini-cv-api:multiarch`. Seul ce job reçoit la permission `packages: write`, et les actions sont épinglées par SHA. Seule l'image de l'API est construite en multi-architecture : l'émulation `arm64` rendrait le build du frontend très long.
+
+![Run Multi-arch image](captures/34-multiarch-run.png)
+
+Résultat de `docker buildx imagetools inspect ghcr.io/wissalelkouk/mini-cv-api:multiarch` :
+
+```
+Name:      ghcr.io/wissalelkouk/mini-cv-api:multiarch
+MediaType: application/vnd.oci.image.index.v1+json
+Digest:    sha256:5138efbff8d1ecb97c96ba16da371f0f34b2de16dfe81c293ea86e0db0836fb0
+
+Manifests:
+  Name:        ghcr.io/wissalelkouk/mini-cv-api:multiarch@sha256:9dca570253fddec39da4a146544d7abae8c5f19e7f53b7555e6185df7a42fd9f
+  MediaType:   application/vnd.oci.image.manifest.v1+json
+  Platform:    linux/amd64
+
+  Name:        ghcr.io/wissalelkouk/mini-cv-api:multiarch@sha256:98d4b6d3ceabecc61d1cd85e8557923fddef40d291c42703d389c47c5b0f67ac
+  MediaType:   application/vnd.oci.image.manifest.v1+json
+  Platform:    linux/arm64
+
+  Name:        ghcr.io/wissalelkouk/mini-cv-api:multiarch@sha256:bf5647d21c6c5150a338d7a32f72f0fdfb1e8c7514de42dbdf0ae22be111dfbf
+  MediaType:   application/vnd.oci.image.manifest.v1+json
+  Platform:    unknown/unknown
+  Annotations:
+    vnd.docker.reference.digest: sha256:9dca570253fddec39da4a146544d7abae8c5f19e7f53b7555e6185df7a42fd9f
+    vnd.docker.reference.type:   attestation-manifest
+
+  Name:        ghcr.io/wissalelkouk/mini-cv-api:multiarch@sha256:61ee8362044ac7894b17c8683c7068d0a5c6bef23724f59f7ad4fed5ccba7c71
+  MediaType:   application/vnd.oci.image.manifest.v1+json
+  Platform:    unknown/unknown
+  Annotations:
+    vnd.docker.reference.digest: sha256:98d4b6d3ceabecc61d1cd85e8557923fddef40d291c42703d389c47c5b0f67ac
+    vnd.docker.reference.type:   attestation-manifest
+```
+
+L'index contient les deux architectures. Les deux entrées `unknown/unknown` ne sont pas des plateformes : ce sont les manifestes d'attestation que BuildKit joint à chaque image (un par architecture). Elles serviront aux tâches sur les attestations et la provenance.
 
 ## 12. Registre privé Harbor (tâches 90 à 95)
 
