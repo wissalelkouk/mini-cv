@@ -30,6 +30,22 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - name: Build images for SBOM
+        working-directory: ${{ github.workspace }}
+        run: |
+          docker build -t portfolio-frontend:release portfolio-next
+          docker build -t portfolio-api:release api
+      - name: Generate SBOM (Syft)
+        run: |
+          mkdir -p sbom
+          for img in frontend api; do
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$PWD/sbom":/out \
+              ghcr.io/anchore/syft@sha256:697ae864af1299cfa43c54b161cea3dd65c6d54de82e3dba66ea3dccb3acc313 \
+              docker:portfolio-$img:release -o spdx-json=/out/sbom-$img.spdx.json
+          done
+          ls -l sbom
       - run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
