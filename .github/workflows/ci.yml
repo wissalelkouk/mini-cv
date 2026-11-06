@@ -146,6 +146,23 @@ jobs:
           push: false
           load: true
           tags: portfolio-api:latest
+      - name: SBOM (Syft)
+        run: |
+          mkdir -p sbom
+          for img in frontend api; do
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$PWD/sbom":/out \
+              ghcr.io/anchore/syft@sha256:697ae864af1299cfa43c54b161cea3dd65c6d54de82e3dba66ea3dccb3acc313 \
+              docker:portfolio-$img:latest -o spdx-json=/out/sbom-$img.spdx.json
+          done
+          ls -l sbom
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbom
+          path: sbom/*.json
+          if-no-files-found: error
       - name: Trivy frontend (rapport lisible)
         run: |
           docker run --rm \
