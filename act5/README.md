@@ -18,7 +18,10 @@ Pipeline GitHub Actions pour `portfolio-next` (frontend Next.js), `api` (Express
 | 85 à 87 | Mesures avant/après, Dockerfile multi-stage de l'API | Fait |
 | 88, 89 | Buildx, image multi-architecture | Fait |
 | 90 à 95 | Harbor | À faire |
-| 96 à 105 | SBOM, Cosign, attestations, SLSA, attaque simulée | À faire |
+| 96 à 99 | SBOM (Syft), artefact, SBOM dans la release, signature Cosign | Fait (captures 36 et 37 à ajouter) |
+| 100 à 102 | Vérification de signature, attestations, provenance | Fait (capture 40 à ajouter) |
+| 103 | SLSA et in-toto | Texte rédigé |
+| 104, 105 | Refus d'une image non signée, simulation d'attaque | Fait |
 
 ---
 
@@ -58,7 +61,12 @@ Systèmes détectés dans les images : frontend sur Alpine 3.24.3, API sur Debia
 
 ![Logs Trivy](captures/08-trivy-scan-logs.png)
 
-Résultats Trivy (vulnérabilités HIGH et CRITICAL par image) : à compléter.
+Vulnérabilités HIGH et CRITICAL des images construites par le pipeline (mesurées avec Trivy 0.69.3, voir la section 11) :
+
+| Image | HIGH | CRITICAL |
+|---|---|---|
+| API | 45 | 1 |
+| Frontend | 10 | 0 |
 
 **Limites actuelles :**
 
@@ -289,7 +297,84 @@ L'index contient les deux architectures. Les deux entrées `unknown/unknown` ne 
 
 ## 13. Software Supply Chain Security (tâches 96 à 105)
 
-À faire : SBOM avec Syft, signature Cosign, attestations de build, provenance, SLSA et simulation d'attaque.
+### SBOM avec Syft (tâche 96)
+
+Un SBOM (inventaire des paquets d'une image) est généré pour chaque image dans le job `build-and-scan-images`. Syft est lancé depuis son image officielle, en version 1.56.0, épinglée par digest (`ghcr.io/anchore/syft@sha256:697ae864af1299cfa43c54b161cea3dd65c6d54de82e3dba66ea3dccb3acc313`), au format SPDX JSON : `sbom-frontend.spdx.json` et `sbom-api.spdx.json`.
+
+À compléter : capture de l'étape « SBOM (Syft) » (`captures/37-syft-log.png`).
+
+### SBOM comme artefact du pipeline (tâche 97)
+
+Les deux fichiers sont publiés comme artefact `sbom` du run CI avec `actions/upload-artifact` (action épinglée par SHA).
+
+À compléter : capture de la section Artifacts du run CI (`captures/36-ci-artifact-sbom.png`).
+
+### SBOM attaché à chaque release (tâche 98)
+
+Le job Release construit les deux images, génère les SBOM avec Syft, puis `@semantic-release/github` les attache à la release (option `assets`). La release `v1.1.0` contient deux fichiers SBOM de 3,15 Mo et 797 Ko, en plus du code source.
+
+![Release v1.1.0 avec les SBOM](captures/35-release-v1.1.0-sbom.png)
+
+Limite : les deux fichiers portent le même libellé « SBOM (SPDX JSON) » dans la page de release ; un libellé par fichier serait plus lisible.
+
+### Signature des images avec Cosign (tâche 99)
+
+Le workflow `sign-images.yml` (déclenchement manuel) construit les images de l'API et du frontend, les publie sur GitHub Container Registry avec le SHA du commit comme tag, puis les signe avec Cosign en mode keyless : c'est l'identité OIDC du workflow GitHub qui signe, aucune clé n'est stockée. La permission `id-token: write` est limitée à ce seul job, et toutes les actions sont épinglées par SHA.
+
+![Run Sign images](captures/38-sign-images-run.png)
+
+### Vérification de la signature avant utilisation (tâche 100)
+
+Avant de livrer une image, le workflow `verify-image.yml` exécute `cosign verify` en exigeant que la signature vienne du workflow `sign-images.yml` de la branche `main` du dépôt, avec l'émetteur OIDC de GitHub :
+
+```
+cosign verify \
+  --certificate-identity-regexp "^https://github.com/${REPO}/\.github/workflows/sign-images\.yml@refs/heads/main$" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "$IMAGE"
+```
+
+Avec `REPO=wissalelkouk/mini-cv` et `IMAGE=ghcr.io/wissalelkouk/mini-cv-api:<SHA complet du commit 7772669>`, la vérification réussit. Cosign confirme : « The cosign claims were validated », « Existence of the claims in the transparency log was verified offline » et « The code-signing certificate was verified using trusted certificate authority certificates ». La sortie liste deux signatures sur le même digest : une signature Cosign (`https://sigstore.dev/cosign/sign/v1`) et l'attestation de provenance (`https://slsa.dev/provenance/v1`).
+
+![cosign verify](captures/39-cosign-verify.png)
+
+### Attestations de build (tâche 101)
+
+Le workflow génère une attestation de provenance pour chaque image avec `actions/attest-build-provenance` (publiée aussi dans le registre). Le résumé du run affiche « Attestation Created ».
+
+À compléter : capture (`captures/40-attestation.png`).
+
+### Provenance des artefacts (tâche 102)
+
+La provenance d'un artefact est la preuve vérifiable de son origine : quel dépôt, quel commit, quel workflow et quel environnement de build l'ont produit. Elle permet de détecter une image qui n'a pas été construite par le pipeline attendu, même si son nom est identique. La signature prouve qui a signé ; l'attestation de provenance décrit comment l'artefact a été construit.
+
+Vérification : l'étape « Verify provenance » du workflow `verify-image.yml` exécute `gh attestation verify "oci://$IMAGE" --repo "$REPO"` sur l'image signée ci-dessus. Elle réussit : l'image a bien été construite par le dépôt attendu.
+
+![gh attestation verify](captures/43-provenance-verify.png)
+
+### SLSA et in-toto (tâche 103)
+
+- **in-toto** décrit une chaîne d'approvisionnement par des attestations signées, chacune liant des entrées, un exécutant et des sorties. Les attestations de provenance du pipeline suivent ce format.
+- **SLSA** (Supply-chain Levels for Software Artifacts) définit des niveaux pour la sécurité du build : le niveau 1 demande une provenance documentée, le niveau 2 une provenance signée générée par une plateforme de build hébergée, le niveau 3 un build isolé dont la provenance ne peut pas être falsifiée par le projet.
+- **Position du pipeline** : build sur des runners GitHub hébergés avec provenance signée générée par `attest-build-provenance`, ce qui correspond au niveau 2. Le niveau 3 demanderait d'isoler le build dans un workflow réutilisable. Niveau estimé d'après la documentation de GitHub : à vérifier.
+
+### Refus d'une image non signée (tâche 104)
+
+Le workflow `verify-image.yml` (déclenchement manuel, l'image est donnée en entrée) contient deux jobs : `verify` contrôle la signature Cosign puis la provenance, et `deliver` (livraison simulée) ne s'exécute que si `verify` réussit (`needs: verify`). L'image saisie passe par une variable d'environnement et non directement dans la commande.
+
+**Essai A : image signée** (`mini-cv-api:7772669e…`). Les deux jobs sont verts en 22 s, la livraison est autorisée.
+
+![Image signée, livraison autorisée](captures/41-gate-image-signee.png)
+
+### Simulation d'attaque (tâche 105)
+
+Scénario : une image qui n'a pas été produite et signée par le pipeline est présentée à la livraison. L'image utilisée est `ghcr.io/wissalelkouk/mini-cv-api:multiarch` (tâche 89), qui n'a jamais été signée.
+
+**Essai B : image non signée.** Le job `verify` échoue (code de sortie 10) et le job `deliver` est ignoré : la livraison est bloquée.
+
+![Image non signée, livraison bloquée](captures/42-gate-image-non-signee.png)
+
+Limite : c'est une simulation. L'image n'a pas été modifiée par un attaquant, elle n'a simplement jamais été signée. Le contrôle vérifie aussi l'identité du workflow signataire : une image signée par un autre workflow que `sign-images.yml` sur `main` serait refusée de la même façon.
 
 ## Difficultés rencontrées
 
@@ -301,3 +386,5 @@ L'index contient les deux architectures. Les deux entrées `unknown/unknown` ne 
 | 16 alertes Semgrep | Actions référencées par tag | Pinning par SHA |
 | PR Dependabot cassées | `react` et `react-dom` mis à jour séparément | Groupes dans `dependabot.yml` |
 | Audit de `release/` en échec | `undici` embarqué dans le `npm` d'un plugin non utilisé | Exception limitée et documentée |
+| Release en échec sur `refs/notes/semantic-release-v1.1.0` | Refus de GitHub sans message de cause ; un tag existait sans release | Relance du job ; la release `v1.1.0` a été publiée avec les SBOM |
+| `verify-image.yml` invalide avant le push | Deux-points suivi d'une espace dans un `run:` non quoté | Bloc `run: \|` ; détecté par le contrôle YAML avant le push |
