@@ -1,0 +1,55 @@
+name: Verify and deliver image
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "Image à livrer (ex. ghcr.io/wissalelkouk/mini-cv-api:<sha>)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify signature and provenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - name: Verify signature (Cosign)
+        env:
+          IMAGE: ${{ inputs.image }}
+          REPO: ${{ github.repository }}
+        run: |
+          cosign verify \
+            --certificate-identity-regexp "^https://github.com/${REPO}/\.github/workflows/sign-images\.yml@refs/heads/main$" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$IMAGE"
+      - name: Verify provenance
+        env:
+          IMAGE: ${{ inputs.image }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh attestation verify "oci://$IMAGE" --repo "$REPO"
+
+  deliver:
+    name: Deliver image (simulated)
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Deliver
+        env:
+          IMAGE: ${{ inputs.image }}
+        run: |
+          echo "Image signée et provenance vérifiée, livraison autorisée : $IMAGE"
