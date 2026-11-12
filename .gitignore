@@ -4,3 +4,7 @@ node_modules/
 .next/
 .vagrant/
 .vagrant
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
