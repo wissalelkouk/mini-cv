@@ -16,4 +16,10 @@ resource "aws_dynamodb_table" "demo" {
     name = "id"
     type = "S"
   }
+
+
+  server_side_encryption {
+    enabled = true
+  }
+
 }

@@ -9,8 +9,6 @@ terraform {
       s3       = "http://localhost:4566"
       dynamodb = "http://localhost:4566"
     }
-    access_key                  = "test"
-    secret_key                  = "test"
     use_path_style              = true
     skip_credentials_validation = true
     skip_metadata_api_check     = true
