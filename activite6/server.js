@@ -19,6 +19,15 @@ const BUCKET = process.env.BUCKET || "mini-cv-bucket";
 const QUEUE_URL = process.env.QUEUE_URL || "http://localhost:4566/000000000000/notifications";
 const EXTENSIONS_OK = new Set([".txt", ".pdf", ".png", ".jpg", ".jpeg"]);
 
+// Validation d'email sans expression régulière complexe
+function emailValide(valeur) {
+  if (valeur.length > 254 || /\s/.test(valeur)) return false;
+  const arobase = valeur.indexOf("@");
+  if (arobase < 1 || arobase !== valeur.lastIndexOf("@")) return false;
+  const domaine = valeur.slice(arobase + 1);
+  return domaine.includes(".") && !domaine.startsWith(".") && !domaine.endsWith(".");
+}
+
 const app = express();
 app.use(express.json({ limit: "100kb" }));
 
@@ -42,7 +51,7 @@ app.post("/api/contact", limiteur, upload.single("piece"), async (req, res) => {
   if (![nom, email, message].every((v) => typeof v === "string" && v.length > 0 && v.length <= 1000)) {
     return res.status(400).json({ status: "ERREUR", message: "nom, email et message sont obligatoires" });
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (!emailValide(email)) {
     return res.status(400).json({ status: "ERREUR", message: "email invalide" });
   }
 
