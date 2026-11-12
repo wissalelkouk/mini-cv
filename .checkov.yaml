@@ -1,0 +1,23 @@
+directory:
+  - activite6/terraform
+framework:
+  - terraform
+skip-path:
+  - bootstrap        # config d'introduction (étapes 119 à 123), détruite après le test
+  - ".terraform"
+skip-check:
+  # Exigences de production non pertinentes pour un émulateur local
+  - CKV_AWS_18       # journalisation d'accès S3
+  - CKV_AWS_21       # versioning S3
+  - CKV_AWS_144      # réplication inter-régions S3
+  - CKV_AWS_145      # chiffrement S3 avec clé KMS gérée
+  - CKV2_AWS_61      # règle de cycle de vie S3
+  - CKV2_AWS_62      # notifications d'événements S3
+  - CKV_AWS_27       # chiffrement SQS (clé KMS)
+  - CKV_AWS_28       # sauvegarde point-in-time DynamoDB
+  - CKV_AWS_119      # DynamoDB avec clé KMS gérée
+  - CKV_AWS_50       # X-Ray sur Lambda
+  - CKV_AWS_115      # limite de concurrence Lambda
+  - CKV_AWS_116      # Dead Letter Queue Lambda
+  - CKV_AWS_117      # Lambda dans un VPC
+  - CKV_AWS_272      # signature de code Lambda
