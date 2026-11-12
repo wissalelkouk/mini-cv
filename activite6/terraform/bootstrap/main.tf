@@ -7,8 +7,8 @@ resource "aws_sqs_queue" "notifications" {
   name = var.queue_name
 }
 
-# nosemgrep: terraform.aws.security.aws-dynamodb-table-unencrypted.aws-dynamodb-table-unencrypted
 # Lab local : DynamoDB chiffre déjà avec une clé gérée par AWS, une clé KMS dédiée n'a pas de sens sur Floci.
+# nosemgrep: terraform.aws.security.aws-dynamodb-table-unencrypted.aws-dynamodb-table-unencrypted
 resource "aws_dynamodb_table" "demo" {
   name         = var.table_name
   billing_mode = "PAY_PER_REQUEST"
