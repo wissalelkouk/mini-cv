@@ -32,3 +32,6 @@ spec:
           envFrom:
             - configMapRef:
                 name: portfolio-config
+          env:
+            - name: PORT
+              value: "3000"
