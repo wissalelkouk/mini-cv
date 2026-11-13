@@ -1,0 +1,6 @@
+---
+- name: Installer K3s
+  hosts: all
+  become: true
+  roles:
+    - k3s

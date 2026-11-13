@@ -1,0 +1,49 @@
+---
+- name: Vérifier si K3s est déjà installé
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_bin
+
+- name: Télécharger le script d'installation K3s
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: /tmp/k3s-install.sh
+    mode: "0755"
+  when: not k3s_bin.stat.exists
+
+- name: Installer K3s
+  ansible.builtin.command: /tmp/k3s-install.sh
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+  args:
+    creates: /usr/local/bin/k3s
+  when: not k3s_bin.stat.exists
+
+- name: Attendre que le service K3s soit actif
+  ansible.builtin.systemd:
+    name: k3s
+    state: started
+    enabled: true
+
+- name: Attendre que le nœud soit Ready
+  ansible.builtin.command: k3s kubectl get nodes
+  register: k3s_nodes
+  until: "'Ready' in k3s_nodes.stdout"
+  retries: 20
+  delay: 10
+  changed_when: false
+
+- name: Créer le dossier ~/.kube pour l'utilisateur
+  ansible.builtin.file:
+    path: "/home/{{ k3s_kubeconfig_user }}/.kube"
+    state: directory
+    owner: "{{ k3s_kubeconfig_user }}"
+    mode: "0700"
+
+- name: Copier le kubeconfig pour l'utilisateur
+  ansible.builtin.copy:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "/home/{{ k3s_kubeconfig_user }}/.kube/config"
+    remote_src: true
+    owner: "{{ k3s_kubeconfig_user }}"
+    mode: "0600"
