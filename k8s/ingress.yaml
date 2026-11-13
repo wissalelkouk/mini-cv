@@ -5,6 +5,10 @@ metadata:
   namespace: portfolio
 spec:
   ingressClassName: traefik
+  tls:
+    - hosts:
+        - portfolio.local
+      secretName: portfolio-tls
   rules:
     - host: portfolio.local
       http:
