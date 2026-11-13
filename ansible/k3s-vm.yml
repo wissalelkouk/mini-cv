@@ -1,0 +1,9 @@
+---
+# Ubuntu -> SSH -> Docker -> K3s
+- import_playbook: install-docker.yml
+
+- name: Installer K3s sur la VM
+  hosts: all
+  become: true
+  roles:
+    - k3s
