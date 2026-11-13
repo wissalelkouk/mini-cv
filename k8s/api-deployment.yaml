@@ -19,11 +19,20 @@ spec:
         - name: api
           image: portfolio-api:1.0
           imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - containerPort: 4000
+          envFrom:
+            - configMapRef:
+                name: portfolio-config
           env:
-            - name: PORT
-              value: "4000"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

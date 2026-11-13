@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: portfolio-config
+  namespace: portfolio
+data:
+  PORT: "4000"
+  CORS_ORIGIN: "http://portfolio.local"
+  RATE_LIMIT_MAX: "100"
+  API_URL: "http://api:4000"

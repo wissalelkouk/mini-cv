@@ -19,8 +19,16 @@ spec:
         - name: frontend
           image: portfolio-frontend:1.0
           imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - containerPort: 3000
-          env:
-            - name: API_URL
-              value: "http://api:4000"
+          envFrom:
+            - configMapRef:
+                name: portfolio-config
