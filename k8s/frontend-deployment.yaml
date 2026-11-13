@@ -15,6 +15,7 @@ spec:
       labels:
         app: frontend
     spec:
+      serviceAccountName: portfolio-sa
       containers:
         - name: frontend
           image: portfolio-frontend:1.0

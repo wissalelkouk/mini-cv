@@ -15,6 +15,7 @@ spec:
       labels:
         app: api
     spec:
+      serviceAccountName: portfolio-sa
       containers:
         - name: api
           image: portfolio-api:1.0
