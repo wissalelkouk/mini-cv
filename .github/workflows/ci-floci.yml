@@ -2,9 +2,7 @@ name: CI - Integration Tests avec Floci
 
 on:
   push:
-    branches: [main, activite7-tls-probes]
   pull_request:
-    branches: [main, activite7-tls-probes]
 
 jobs:
   integration-floci:
