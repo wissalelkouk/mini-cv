@@ -15,6 +15,38 @@ services:
       interval: 5s
       retries: 10
 
+  floci:
+    image: floci/floci:latest
+    container_name: devsecops-floci
+    restart: unless-stopped
+    ports:
+      - "4566:4566"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - floci_data:/app/data
+    environment:
+      FLOCI_DEFAULT_REGION: us-east-1
+      FLOCI_STORAGE_MODE: persistent
+
+  floci-init:
+    image: amazon/aws-cli:latest
+    depends_on:
+      - floci
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until aws --endpoint-url http://floci:4566 sts get-caller-identity >/dev/null 2>&1; do
+          echo "Attente de Floci..."
+          sleep 1
+        done
+        aws --endpoint-url http://floci:4566 s3 mb s3://mini-cv-attachments || true
+        aws --endpoint-url http://floci:4566 sqs create-queue --queue-name mini-cv-contact-queue || true
+        echo "Floci prêt : bucket S3 et file SQS créés."
+
   api:
     build: ./api
     image: devsecops-api
@@ -23,9 +55,17 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-5}
+      AWS_ENDPOINT_URL: http://floci:4566
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      S3_BUCKET_NAME: mini-cv-attachments
+      SQS_QUEUE_URL: http://floci:4566/000000000000/mini-cv-contact-queue
     depends_on:
       db:
         condition: service_healthy
+      floci-init:
+        condition: service_completed_successfully
     ports:
       - "4000:4000"
     healthcheck:
@@ -53,3 +93,4 @@ services:
 
 volumes:
   pgdata:
+  floci_data:
