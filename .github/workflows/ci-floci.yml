@@ -1,0 +1,111 @@
+name: CI - Integration Tests avec Floci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  integration-floci:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+          POSTGRES_DB: minicv
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      floci:
+        image: floci/floci:latest
+        ports:
+          - 4566:4566
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/minicv
+      CORS_ORIGIN: http://localhost:3000
+      RATE_LIMIT_MAX: 20
+      AWS_ENDPOINT_URL: http://localhost:4566
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      S3_BUCKET_NAME: mini-cv-ci-attachments
+
+    steps:
+      - name: Checkout du dépôt
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: api/package-lock.json
+
+      - name: Installation des dépendances API
+        working-directory: ./api
+        run: npm ci
+
+      - name: Attente de Floci
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:4566/_floci/health; then
+              echo "Floci est prêt !"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Floci n'a pas répondu à temps"
+          exit 1
+
+      - name: Création des ressources AWS locales dans Floci
+        run: |
+          aws --endpoint-url http://localhost:4566 s3 mb s3://$S3_BUCKET_NAME
+          QUEUE_URL=$(aws --endpoint-url http://localhost:4566 sqs create-queue \
+            --queue-name mini-cv-ci-queue --query QueueUrl --output text)
+          echo "SQS_QUEUE_URL=$QUEUE_URL" >> $GITHUB_ENV
+          aws --endpoint-url http://localhost:4566 s3 ls
+          aws --endpoint-url http://localhost:4566 sqs list-queues
+
+      - name: Vérification de Floci (S3 et SQS)
+        run: |
+          echo "contenu de test" > /tmp/ci.txt
+          aws --endpoint-url http://localhost:4566 s3 cp /tmp/ci.txt s3://$S3_BUCKET_NAME/ci.txt
+          aws --endpoint-url http://localhost:4566 s3 cp s3://$S3_BUCKET_NAME/ci.txt /tmp/recu.txt
+          grep -q "contenu de test" /tmp/recu.txt
+          aws --endpoint-url http://localhost:4566 sqs send-message \
+            --queue-url "$SQS_QUEUE_URL" --message-body "message-ci"
+          aws --endpoint-url http://localhost:4566 sqs receive-message \
+            --queue-url "$SQS_QUEUE_URL" | grep -q "message-ci"
+          echo "S3 et SQS fonctionnent dans Floci"
+
+      - name: Appliquer les migrations Prisma
+        working-directory: ./api
+        run: npx prisma migrate deploy
+
+      - name: Test d'intégration API (port 4000)
+        working-directory: ./api
+        run: |
+          npm start &
+          API_PID=$!
+          for i in $(seq 1 20); do
+            if curl -sf http://127.0.0.1:4000/api/health; then
+              echo "API prête !"
+              break
+            fi
+            sleep 1
+          done
+          curl -sf -X POST http://127.0.0.1:4000/api/contact \
+            -H "Content-Type: application/json" \
+            -d '{"name":"CI GitHub","email":"ci@example.com","message":"Test Floci CI"}'
+          kill $API_PID || true
