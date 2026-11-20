@@ -1,0 +1,52 @@
+- name: Configurer le serveur (Docker et K3s)
+  hosts: serveurs
+  become: true
+  tasks:
+    - name: Vérifier si Docker est déjà installé
+      ansible.builtin.command: docker --version
+      register: docker_present
+      failed_when: false
+      changed_when: false
+
+    - name: Installer Docker (seulement s'il est absent)
+      ansible.builtin.apt:
+        name: docker.io
+        state: present
+        update_cache: true
+      when: docker_present.rc != 0
+
+    - name: Démarrer Docker
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Autoriser vagrant à utiliser Docker
+      ansible.builtin.user:
+        name: vagrant
+        groups: docker
+        append: true
+
+    - name: Installer K3s
+      ansible.builtin.shell: curl -sfL https://get.k3s.io | sh -
+      args:
+        creates: /usr/local/bin/k3s
+
+    - name: Attendre que le nœud K3s soit prêt
+      ansible.builtin.command: k3s kubectl get nodes
+      register: noeuds
+      until: "' Ready' in noeuds.stdout"
+      retries: 20
+      delay: 10
+      changed_when: false
+
+    - name: Lire la version de Docker
+      ansible.builtin.command: docker --version
+      register: docker_version
+      changed_when: false
+
+    - name: Résultat
+      ansible.builtin.debug:
+        msg:
+          - "{{ docker_version.stdout }}"
+          - "{{ noeuds.stdout_lines }}"
