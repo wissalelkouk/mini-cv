@@ -1833,14 +1833,14 @@ La valeur est fictive : dans un vrai projet, un secret ne doit jamais être écr
 
 ```mermaid
 flowchart LR
-  C[Client / curl] -->|POST /api/contact| E[API Express :3000]
-  E -->|PutObject pièce jointe| S3[(S3 mini-cv-bucket)]
-  E -->|SendMessage notification| SQS[[SQS notifications]]
-  subgraph Floci :4566
+  C["Client / curl"] -->|"POST /api/contact"| E["API Express :3000"]
+  E -->|"PutObject pièce jointe"| S3[("S3 mini-cv-bucket")]
+  E -->|"SendMessage notification"| SQS[["SQS notifications"]]
+  subgraph FL["Floci port 4566"]
     S3
     SQS
   end
-```
+`````
 
 ```bash
 curl -X POST http://localhost:3000/api/contact -F nom=Wissal -F email=wissal@example.com \
@@ -2107,11 +2107,11 @@ const bucket = new aws.s3.BucketV2("pulumi-bucket",
 
 ```mermaid
 flowchart LR
-  T[Terraform] -->|crée| F[(Floci : S3, SQS, DynamoDB)]
-  T -->|génère inventory.ini| A[Ansible]
-  A -->|configure| V[VM Vagrant 192.168.56.10]
-  V --> D[Docker]
-  V --> K[K3s]
+  T["Terraform"] -->|"crée"| F[("Floci : S3, SQS, DynamoDB")]
+  T -->|"génère inventory.ini"| A["Ansible"]
+  A -->|"configure"| V["VM Vagrant 192.168.56.10"]
+  V --> D["Docker"]
+  V --> K["K3s"]
 ```
 
 Terraform crée les ressources, génère l'inventaire Ansible (`local_file`) avec l'IP de la VM, puis lance le playbook (`terraform_data` + `local-exec`). Le playbook ne réinstalle pas Docker s'il est présent, ce qui a évité un conflit `containerd.io` / `docker.io`.
