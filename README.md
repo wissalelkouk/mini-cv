@@ -1709,3 +1709,446 @@ script returned exit code 15
 Pipeline GitHub Actions (tests, scan des secrets, SAST, audit des dépendances, Trivy, CodeQL, Dependabot, protection de branche, semantic-release).
 
 Détail et captures : [act5/README.md](act5/README.md)
+
+## Activité 6 - Cloud local, Terraform et automatisation
+
+Dans cette activité, j'ai remplacé un vrai compte AWS par **Floci**, un émulateur AWS local qui tourne dans Docker, puis j'ai décrit l'infrastructure avec **Terraform**, **OpenTofu**, **Terragrunt** et **Pulumi**, et je l'ai configurée avec **Ansible**. Aucun identifiant réel n'est utilisé : les clés `test/test` sont fictives et viennent de variables d'environnement.
+
+```
+activite6/                    # API Express, Lambda, Terraform (bootstrap, modules, envs)
+infra/terragrunt/             # Terragrunt : dev, staging, prod
+infra/automation/             # Terraform puis Ansible, rebuild.sh
+.github/workflows/            # iac-scan.yml (Checkov), ci-floci.yml (tests Floci)
+captures/                     # captures d'écran, nommées par numéro d'étape
+```
+
+---
+
+## 22. Cloud local avec Floci
+
+### Étape 106 : installer et démarrer Floci
+
+```bash
+docker run -d --name floci -p 4566:4566 floci/floci
+docker ps
+```
+
+Floci expose les API AWS sur le port 4566. Le conteneur est `healthy`.
+
+![docker ps](captures/106-floci-docker-ps.png)
+
+### Étape 107 : configurer l'AWS CLI avec des identifiants fictifs
+
+```bash
+aws configure --profile floci          # test / test / us-east-1 / json
+aws --profile floci --endpoint-url http://localhost:4566 sts get-caller-identity
+alias awsl='aws --profile floci --endpoint-url http://localhost:4566'
+```
+
+Floci répond avec le compte `000000000000`. Les identifiants `test` ne sont pas vérifiés.
+
+![sts](captures/107-sts.png)
+
+### Étape 108 : bucket S3
+
+```bash
+awsl s3 mb s3://mini-cv-bucket
+awsl s3 ls
+```
+
+![S3](captures/108-s3-mb.png)
+
+### Étape 109 : envoyer puis récupérer un fichier
+
+```bash
+echo "Bonjour Floci" > hello.txt
+awsl s3 cp hello.txt s3://mini-cv-bucket/hello.txt
+awsl s3 cp s3://mini-cv-bucket/hello.txt recu.txt
+cat recu.txt
+```
+
+![S3 cp](captures/109-s3-cp.png)
+
+### Étape 110 : file SQS
+
+```bash
+awsl sqs create-queue --queue-name notifications
+awsl sqs send-message --queue-url http://localhost:4566/000000000000/notifications --message-body "message de test"
+awsl sqs receive-message --queue-url http://localhost:4566/000000000000/notifications
+```
+
+![SQS](captures/110-sqs.png)
+
+### Étape 111 : table DynamoDB
+
+```bash
+awsl dynamodb create-table --table-name contacts \
+  --attribute-definitions AttributeName=id,AttributeType=S \
+  --key-schema AttributeName=id,KeyType=HASH --billing-mode PAY_PER_REQUEST
+awsl dynamodb put-item --table-name contacts \
+  --item '{"id":{"S":"1"},"nom":{"S":"Wissal"},"email":{"S":"wissal@example.com"}}'
+awsl dynamodb put-item --table-name contacts \
+  --item '{"id":{"S":"2"},"nom":{"S":"Alice"},"email":{"S":"alice@example.com"}}'
+awsl dynamodb scan --table-name contacts
+```
+
+![DynamoDB](captures/111-dynamodb.png)
+
+### Étape 112 : fonction Lambda Node.js
+
+```js
+exports.handler = async (event) => ({
+  statusCode: 200,
+  body: JSON.stringify({ message: `Hello ${event.nom}`, input: event }),
+});
+```
+
+```bash
+zip function.zip index.js
+awsl lambda create-function --function-name hello --runtime nodejs18.x --handler index.handler \
+  --role arn:aws:iam::000000000000:role/lambda-role --zip-file fileb://function.zip
+awsl lambda invoke --function-name hello --cli-binary-format raw-in-base64-out \
+  --payload '{"nom":"Wissal"}' sortie.json
+cat sortie.json
+```
+
+La réponse contient `"Hello Wissal"` avec un `statusCode` de 200.
+
+![Lambda](captures/112-lambda.png)
+
+### Étape 113 : Secrets Manager
+
+```bash
+awsl secretsmanager create-secret --name demo/db-password --secret-string "motdepasse-demo"
+awsl secretsmanager get-secret-value --secret-id demo/db-password
+```
+
+La valeur est fictive : dans un vrai projet, un secret ne doit jamais être écrit dans Git.
+
+![Secrets Manager](captures/113-secrets.png)
+
+### Étape 114 : l'API Express communique avec Floci
+
+`POST /api/contact` valide la requête, envoie la pièce jointe dans S3 et publie une notification dans SQS.
+
+```mermaid
+flowchart LR
+  C[Client / curl] -->|POST /api/contact| E[API Express :3000]
+  E -->|PutObject pièce jointe| S3[(S3 mini-cv-bucket)]
+  E -->|SendMessage notification| SQS[[SQS notifications]]
+  subgraph Floci :4566
+    S3
+    SQS
+  end
+```
+
+```bash
+curl -X POST http://localhost:3000/api/contact -F nom=Wissal -F email=wissal@example.com \
+  -F message="Bonjour" -F piece=@hello.txt
+awsl s3 ls s3://mini-cv-bucket/pieces/
+awsl sqs receive-message --queue-url http://localhost:4566/000000000000/notifications
+```
+
+Réponse : `{"status":"OK","message":"Contact et pièce jointe traités"}`. Le nom du fichier dans S3 est généré par le serveur (UUID), jamais repris du client, ce qui évite les attaques par chemin (alerte CodeQL corrigée).
+
+![API](captures/114-api-contact.png)
+
+### Étape 115 : Floci dans Docker Compose
+
+J'ai ajouté Floci comme service dans le `docker-compose.yml` du projet, à côté du portfolio, du frontend, de l'API et de la base PostgreSQL :
+
+```yaml
+  floci:
+    image: floci/floci
+    container_name: devsecops-floci
+    ports:
+      - "4566:4566"
+    restart: unless-stopped
+```
+
+Une seule commande (`docker compose up -d`) démarre toute la pile. Dans le réseau Compose, l'API joint Floci par son nom de service `floci` et non par `localhost`. Le conteneur `devsecops-floci` est `healthy`.
+
+![docker compose ps](captures/115-compose-ps.png)
+
+### Étape 116 : Floci comme service container dans GitHub Actions
+
+Le workflow `.github/workflows/ci-floci.yml` démarre Floci comme **service container** (avec PostgreSQL), sans aucun compte AWS. Il enchaîne :
+
+1. l'attente de Floci (`/_floci/health`) ;
+2. la création du bucket `mini-cv-ci-attachments` et de la file `mini-cv-ci-queue` ;
+3. un test S3 (envoi puis lecture d'un fichier) et SQS (envoi puis lecture d'un message) ;
+4. les migrations Prisma (`npx prisma migrate deploy`) ;
+5. le démarrage de l'API et un `POST /api/contact`.
+
+Les actions GitHub sont épinglées par SHA de commit, comme l'exige Semgrep.
+
+Les deux premiers runs (rouges) échouaient parce que la table `contact_messages` n'existait pas dans le PostgreSQL de la CI : le schéma n'était pas appliqué. L'ajout de l'étape de migration Prisma a corrigé le problème (runs verts #3 et #4, PR #55).
+
+![Runs du workflow Floci](captures/116-github-actions-ok.png)
+
+### Étape 117 : Floci, LocalStack et AWS réel
+
+| Critère | Floci | LocalStack | AWS réel |
+| --- | --- | --- | --- |
+| Licence | Open source | Édition gratuite limitée, fonctions avancées payantes (à vérifier sur le site officiel) | Service commercial |
+| Services | Services courants (S3, SQS, DynamoDB, Lambda, Secrets Manager) | Catalogue très large, une partie payante | Catalogue complet |
+| Fidélité | Bonne sur les API courantes | Bonne, plus mature | Référence |
+| Coût | Gratuit | Gratuit en base, payant au-delà | Facturation à l'usage |
+| Usage en CI | Simple : un conteneur de service, sans compte | Possible, parfois avec un compte | Payant, risque de fuite de secrets et de ressources oubliées |
+
+**Limites rencontrées avec Floci** : la création d'une file SQS prend environ 25 secondes, et il ne gère pas toujours la modification d'une ressource existante comme un vrai AWS.
+
+---
+
+## 23. Introduction à Terraform
+
+### Étape 118 : installation
+
+```bash
+terraform version        # Terraform v1.17.1 sur linux_amd64
+```
+
+![terraform version](captures/118-terraform-version.png)
+
+### Étape 119 : premier projet (`activite6/terraform/bootstrap`)
+
+Les quatre fichiers `providers.tf`, `main.tf`, `variables.tf` et `outputs.tf` sont séparés. Le provider AWS pointe vers Floci :
+
+```hcl
+provider "aws" {
+  region                      = var.region
+  skip_credentials_validation = true
+  skip_metadata_api_check     = true
+  skip_requesting_account_id  = true
+  s3_use_path_style           = true
+
+  endpoints {
+    s3       = var.endpoint
+    sqs      = var.endpoint
+    dynamodb = var.endpoint
+  }
+}
+```
+
+Les identifiants ne sont pas écrits dans le code : ils viennent de `AWS_ACCESS_KEY_ID` et `AWS_SECRET_ACCESS_KEY` (Semgrep signale les identifiants en dur).
+
+### Étape 120 : init, fmt, validate, plan
+
+```bash
+terraform init && terraform fmt && terraform validate && terraform plan
+```
+
+![terraform init](captures/120-terraform-init.png)
+![terraform plan](captures/120-terraform-plan.png)
+
+
+### Étape 121 : S3, SQS et DynamoDB avec Terraform
+
+```hcl
+resource "aws_s3_bucket" "mini_cv" {
+  bucket        = var.bucket_name      # tf-demo-bucket
+  force_destroy = true
+}
+
+resource "aws_sqs_queue" "notifications" {
+  name = var.queue_name
+}
+
+resource "aws_dynamodb_table" "demo" {
+  name         = var.table_name         # demo-table
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
+  attribute {
+    name = "id"
+    type = "S"
+  }
+}
+```
+
+![terraform apply](captures/121-terraform-apply.png)
+
+### Étape 122 : vérification avec l'AWS CLI
+
+```bash
+awsl s3 ls && awsl sqs list-queues && awsl dynamodb list-tables
+```
+
+Le bucket `tf-demo-bucket`, la file et la table `demo-table` sont bien présents.
+
+![Vérification](captures/122-verif-cli.png)
+
+### Étape 123 : destroy
+
+```bash
+terraform destroy -auto-approve      # Resources: 3 destroyed
+```
+
+![terraform destroy](captures/123-terraform-destroy.png)
+![Après le destroy](captures/123-s3-apres-destroy.png)
+
+---
+
+## 24. Terraform avancé
+
+### Étape 124 : modules réutilisables
+
+Un module par ressource dans `activite6/terraform/modules/` : `s3`, `sqs`, `dynamodb`, `lambda`. Le module S3 est sécurisé par défaut (chiffrement AES256 et blocage de l'accès public).
+
+![Modules](captures/124-modules-tree.png)
+
+### Étape 125 : dev, staging et prod
+
+Trois dossiers dans `activite6/terraform/envs/` appellent les mêmes modules avec un préfixe différent (`dev-`, `staging-`, `prod-`).
+
+![Environnements](captures/125-envs-tree.png)
+
+### Étape 126 : le fichier Terraform State
+
+Le fichier `terraform.tfstate` est la mémoire de Terraform : il relie chaque bloc `resource` du code à la ressource réelle créée. Terraform le compare au code pour calculer le `plan`. Sans lui, il ne sait plus ce qu'il gère. Il peut contenir des données sensibles, donc il ne se commite pas dans Git (`.gitignore`). En équipe, il est stocké dans un backend distant avec un verrou.
+
+### Étape 127 : backend S3 distant dans Floci
+
+```hcl
+backend "s3" {
+  bucket         = "terraform-state-floci"
+  key            = "dev/terraform.tfstate"
+  dynamodb_table = "terraform-locks"
+  endpoints      = { s3 = "http://localhost:4566", dynamodb = "http://localhost:4566" }
+  use_path_style = true
+}
+```
+
+Le state de chaque environnement est dans `terraform-state-floci` : `dev/`, `staging/` et `prod/`. Terraform signale que `dynamodb_table` est dépréciée au profit de `use_lockfile` ; j'ai gardé `dynamodb_table` pour montrer le verrou dans DynamoDB.
+
+![Backend S3](captures/127-backend-s3.png)
+![Plan après migration du state](captures/127-plan-apres-migration.png)
+
+### Étape 128 : verrouillage du state
+
+Une première exécution garde le verrou, une seconde est bloquée avec `Error acquiring the state lock` (`ConditionalCheckFailedException` côté DynamoDB). Le verrou est visible dans la table `terraform-locks`.
+
+![Verrou](captures/128-state-lock.png)
+![Verrou dans DynamoDB](captures/128-lock-dynamodb.png)
+![Verrou libéré](captures/128-plan-apres-verrou.png)
+
+### Étape 129 : Checkov dans le pipeline
+
+Le workflow `iac-scan.yml` lance Checkov avec `.checkov.yaml`. Les règles ignorées visent la production réelle (réplication inter-régions, journalisation, clé KMS, Lambda dans un VPC) et n'ont pas de sens sur un émulateur local. Les règles critiques (accès public, chiffrement) restent actives.
+
+![Checkov vert](captures/129-checkov-vert.png)
+
+### Étape 130 : mauvaise configuration volontaire
+
+Un bucket avec `acl = "public-read"` et le blocage d'accès public désactivé fait échouer le pipeline (PR #46, non fusionnée).
+
+![Scan local](captures/130-checkov-local-echec.png)
+![Pipeline échoué](captures/130-pipeline-failed.png)
+
+### Étape 131 : OpenTofu
+
+```bash
+tofu version
+tofu init && tofu apply -auto-approve -var="queue_name=tofu-notifications"
+```
+
+Les mêmes fichiers fonctionnent sans modification (la file a un autre nom, car `notifications` existe déjà pour l'API).
+
+![tofu version](captures/131-opentofu-version.png)
+![OpenTofu apply](captures/131-opentofu.png)
+![OpenTofu destroy](captures/131-opentofu-destroy.png)
+
+| | Terraform | OpenTofu |
+| --- | --- | --- |
+| Licence | BUSL (HashiCorp) | MPL 2.0, Linux Foundation |
+| Commande | `terraform` | `tofu` |
+| Configuration | HCL | HCL, identique ici |
+| Registre | `registry.terraform.io` | `registry.opentofu.org` |
+
+### Étape 132 : Terragrunt
+
+Le backend est écrit **une seule fois** dans `infra/terragrunt/root.hcl`, et chaque environnement tient en une dizaine de lignes (`terragrunt.hcl`) au lieu de quatre fichiers répétés. Terragrunt pilote ici OpenTofu.
+
+```bash
+cd infra/terragrunt/envs
+terragrunt run --all apply --non-interactive
+```
+
+![Terragrunt](captures/132-terragrunt.png)
+![Terragrunt S3](captures/132-terragrunt-s3.png)
+
+### Étape 133 : Pulumi (TypeScript)
+
+```ts
+const floci = new aws.Provider("floci", {
+  region: "us-east-1",
+  skipCredentialsValidation: true,
+  skipRequestingAccountId: true,
+  s3UsePathStyle: true,
+  endpoints: [{ s3: "http://localhost:4566" }],
+});
+const bucket = new aws.s3.BucketV2("pulumi-bucket",
+  { bucket: "pulumi-demo-bucket", forceDestroy: true }, { provider: floci });
+```
+
+![Pulumi](captures/133-pulumi.png)
+
+| | Terraform | OpenTofu | Pulumi |
+| --- | --- | --- | --- |
+| Langage | HCL | HCL | TypeScript, Python, Go |
+| Licence | BUSL | MPL 2.0 | Apache 2.0 |
+| State | Backend S3 + verrou | Idem | Backend local ici |
+| Points forts | Écosystème, documentation | Remplaçant libre | Boucles et fonctions d'un vrai langage |
+
+---
+
+## 25. Automatisation Terraform + Ansible
+
+### Étape 134 : Terraform, puis Ansible
+
+```mermaid
+flowchart LR
+  T[Terraform] -->|crée| F[(Floci : S3, SQS, DynamoDB)]
+  T -->|génère inventory.ini| A[Ansible]
+  A -->|configure| V[VM Vagrant 192.168.56.10]
+  V --> D[Docker]
+  V --> K[K3s]
+```
+
+Terraform crée les ressources, génère l'inventaire Ansible (`local_file`) avec l'IP de la VM, puis lance le playbook (`terraform_data` + `local-exec`). Le playbook ne réinstalle pas Docker s'il est présent, ce qui a évité un conflit `containerd.io` / `docker.io`.
+
+Résultat : `PLAY RECAP ok=8 failed=0`, Docker 29.9.3 et le nœud K3s `Ready`.
+
+![Résultat Ansible](captures/134-ansible-result.png)
+![Inventaire](captures/134-inventaire.png)
+
+### Étape 135 : tout supprimer, puis reconstruire
+
+```bash
+time ./rebuild.sh
+```
+
+Le script exécute `terraform destroy`, `vagrant destroy -f`, `vagrant up`, puis `terraform apply`.
+
+| Mesure | Résultat |
+| --- | --- |
+| Suppression, recréation et configuration de la VM | **38 min 53 s** (`PLAY RECAP ok=18 changed=8 failed=0`) |
+| `terraform apply` final (relancé après un timeout) | 45 s pour les ressources Floci, 2 min 3 s avec Ansible |
+
+Le dernier `terraform apply` a expiré (`timeout while waiting for plugin to start`) : la machine n'a que 3,5 Go de RAM, le swap était plein et la charge à 37. J'ai arrêté la VM, appliqué les ressources Floci, relancé la VM puis le playbook. Le débit réseau (environ 200 Ko/s) pour la box, K3s et le provider AWS (600 Mo) explique aussi la durée.
+
+Après reconstruction, le nœud K3s est `Ready` avec un âge de 10 h, contre 4 jours avant : la VM a bien été recréée.
+
+Sortie de `time ./rebuild.sh` : `real 38m53,398s` (`user 2m11s`, `sys 2m31s`).
+
+![Dernier apply (Ansible)](captures/135-apply-ansible.png)
+![Vérification](captures/135-verification.png)
+
+---
+
+## Sécurité du pipeline
+
+Le dépôt est protégé : une PR et six vérifications sont obligatoires. Semgrep, CodeQL, Gitleaks, Trivy et `npm audit` m'ont fait corriger :
+- l'absence de limitation de débit et l'écriture sur le disque dans l'API (CodeQL) ;
+- les identifiants en dur dans Terraform (passés en variables d'environnement) ;
+- les actions GitHub non épinglées (épinglées par SHA de commit) ;
+- la table DynamoDB sans clé KMS (exception `nosemgrep` justifiée pour un lab local).
