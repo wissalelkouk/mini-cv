@@ -8,3 +8,11 @@ node_modules/
 *.tfstate
 *.tfstate.*
 *.tfvars
+.terragrunt-cache/
+**/node_modules/
+.pulumi/
+Pulumi.*.yaml
+infra/automation/ansible/inventory.ini
+infra/automation/.terraform/
+infra/automation/*.tfstate*
+activite6/terraform/opentofu/
