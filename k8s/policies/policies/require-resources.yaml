@@ -1,0 +1,22 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-requests-limits
+spec:
+  validationActions: [Audit]
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: portfolio
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments"]
+  validations:
+    - expression: >-
+        object.spec.template.spec.containers.all(c,
+        has(c.resources) && has(c.resources.requests) && has(c.resources.limits) &&
+        has(c.resources.requests.cpu) && has(c.resources.requests.memory) &&
+        has(c.resources.limits.cpu) && has(c.resources.limits.memory))
+      message: "requests et limits (cpu et memory) sont obligatoires."

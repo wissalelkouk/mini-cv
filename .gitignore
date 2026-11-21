@@ -16,3 +16,7 @@ infra/automation/ansible/inventory.ini
 infra/automation/.terraform/
 infra/automation/*.tfstate*
 activite6/terraform/opentofu/
+pgdata-backup.tgz
+k8s/sealed/kubeseal*
+.next/
+node_modules/
