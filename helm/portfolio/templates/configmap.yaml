@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: portfolio-config
+  namespace: {{ .Release.Namespace }}
+data:
+  PORT: "{{ .Values.api.port }}"
+  CORS_ORIGIN: {{ .Values.config.corsOrigin | quote }}
+  RATE_LIMIT_MAX: {{ .Values.config.rateLimitMax | quote }}
+  API_URL: {{ .Values.config.apiUrl | quote }}
