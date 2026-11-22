@@ -2152,3 +2152,470 @@ Le dépôt est protégé : une PR et six vérifications sont obligatoires. Semgr
 - les identifiants en dur dans Terraform (passés en variables d'environnement) ;
 - les actions GitHub non épinglées (épinglées par SHA de commit) ;
 - la table DynamoDB sans clé KMS (exception `nosemgrep` justifiée pour un lab local).
+## Activité 7 - Kubernetes et sécurité DevSecOps (étapes 136 à 189)
+
+Dans cette activité, j'ai déployé le DevSecOps Portfolio sur un cluster **K3s** (Kubernetes léger) installé sur ma VM Ubuntu : frontend Next.js, API Express et base PostgreSQL. J'ai ensuite ajouté la configuration, le HTTPS, la supervision de santé, la sécurité (RBAC, Pod Security, NetworkPolicies), les policies Kyverno, la gestion des secrets et la sécurité continue (Trivy Operator, Falco).
+
+> Les captures sont dans `captures/`, les manifests dans `k8s/`.
+
+**Environnement :** VM Ubuntu avec 3,3 Go de RAM, K3s v1.37.2+k3s1, namespace `portfolio`.
+
+---
+
+## 26. Introduction à Kubernetes
+
+### Étapes 136-137 : installation et vérification de K3s
+
+```
+curl -sfL https://get.k3s.io | sh -
+mkdir -p ~/.kube && sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+sudo chown $USER:$USER ~/.kube/config
+kubectl get nodes
+kubectl get pods -A
+```
+
+Le nœud est `Ready`, et les pods de `kube-system` (coredns, traefik, local-path-provisioner, metrics-server) sont `Running`.
+
+![K3s](captures/136-k3s.png)
+
+### Étape 138 : namespace dédié
+
+Le namespace `portfolio` est défini dans `k8s/namespace.yaml` (avec les labels Pod Security de l'étape 166).
+
+### Étapes 139-140 : Deployments frontend et API
+
+- `frontend` : image `portfolio-frontend:1.0`, port 3000.
+- `api` : image `portfolio-api:1.0`, port 4000, avec la variable `DATABASE_URL` lue dans un Secret.
+
+K3s n'utilise pas Docker : j'importe les images construites en local avec `docker save <image> -o x.tar` puis `sudo k3s ctr -n k8s.io images import x.tar`, et j'utilise `imagePullPolicy: IfNotPresent`. Je n'utilise jamais le tag `latest` (il est interdit par ma policy Kyverno de l'étape 172).
+
+Manifests : `k8s/frontend-deployment.yaml`, `k8s/api-deployment.yaml`.
+
+```
+kubectl get pods -n portfolio
+```
+
+![Pods et logs de l'API](captures/139-140-pods.png)
+
+### Étapes 141-142 : Services
+
+| Service | Type | Port |
+|---|---|---|
+| `frontend` | NodePort | 80 vers 3000 (nodePort 30080) |
+| `api` | ClusterIP | 4000 |
+| `postgres` | ClusterIP | 5432 |
+
+```
+kubectl get svc -n portfolio
+```
+
+![Services](captures/142-svc.png)
+
+### Étape 143 : le frontend appelle l'API via le Service
+
+Le frontend reçoit `API_URL=http://api:4000` : le nom `api` est résolu par CoreDNS dans le cluster. L'appel est fait côté serveur Next.js.
+
+Test depuis un pod portant le label `app=frontend` (autorisé par les NetworkPolicies) :
+
+```
+{"status":"ok","service":"devsecops-api",...}
+```
+
+![Test frontend vers API et NetworkPolicies](captures/143-api-netpol.png)
+
+---
+
+## 27. Kubernetes avec Ansible
+
+### Étape 144 : rôle Ansible K3s
+
+Le rôle est dans `ansible/roles/k3s/` (`defaults/main.yml`, `tasks/main.yml`). Il installe K3s sur une VM.
+
+```
+vagrant ssh -c "sudo k3s kubectl get nodes"
+```
+
+![Nœud K3s dans la VM Vagrant](captures/144-146-vagrant-k3s.png)
+
+### Étape 145 : Vagrant + Ansible
+
+Le `Vagrantfile` crée la VM `ubuntu-tp` (libvirt, 2 Go, 2 CPU) et lance le playbook `ansible/k3s-vm.yml`, qui importe `install-docker.yml` puis applique le rôle `k3s`.
+
+```
+vagrant up
+   -> VM Ubuntu 24.04 (libvirt)
+   -> Ansible : install-docker.yml
+   -> rôle k3s
+   -> K3s Ready
+```
+
+Résultat Ansible : `ok=18 changed=8 unreachable=0 failed=0`. Docker 29.10.0 est installé par l'automatisation.
+
+![Vagrant et Ansible](captures/144-146-vagrant-k3s.png)
+
+### Étape 146 : détruire puis recréer
+
+```
+vagrant destroy -f
+vagrant up --provider libvirt
+vagrant ssh -c "sudo k3s kubectl get nodes"
+```
+
+Après la recréation, le nœud affiche un âge de quelques secondes : tout a été reconstruit uniquement par l'automatisation.
+
+![Recréation](captures/144-146-vagrant-k3s.png)
+
+---
+
+## 28. Kubernetes : configuration de l'application
+
+### Étape 147 : ConfigMap
+
+`portfolio-config` contient la configuration non sensible (manifest : `k8s/configmap.yaml`).
+
+```
+kubectl get configmap -n portfolio
+```
+
+![ConfigMap](captures/147-configmap.png)
+
+![Manifest configmap.yaml](captures/147-configmap-manifest.png)
+
+### Étapes 148-149 : Secret
+
+![DATABASE_URL lu dans le Secret](captures/149-secret-env.png)
+
+Le Secret `postgres-secret` est créé par commande (jamais dans Git) et contient les identifiants PostgreSQL et `DATABASE_URL`. Les Deployments `api` et `postgres` le lisent avec `secretKeyRef`.
+
+### Étape 150 : PostgreSQL avec PVC
+
+PostgreSQL 16 utilise le PVC `postgres-pvc` (1 Gi, `local-path`).
+
+```
+kubectl get pvc -n portfolio
+```
+
+Preuve de persistance : j'ai créé une table `persist_test`, supprimé le pod, puis relu la ligne dans le nouveau pod.
+
+![Persistance](captures/150-persistance.png)
+
+### Étapes 151-152 : Ingress
+
+L'Ingress `portfolio` (Traefik) expose `portfolio.local` et `portfolio.local/api` (manifest : `k8s/ingress.yaml`). Sur Windows, j'ajoute `<IP de la VM>  portfolio.local` dans `C:\Windows\System32\drivers\etc\hosts`.
+
+![Portfolio depuis la machine physique](captures/152-portfolio-local.png)
+
+---
+
+## 29. HTTPS et certificats
+
+### Étapes 153-155 : cert-manager
+
+J'ai installé cert-manager, créé un Issuer autosigné et un certificat TLS `portfolio-tls`, puis l'Ingress sert `https://portfolio.local`.
+
+![Issuer et Certificate](captures/154-issuer-certificate.png)
+
+```
+kubectl get certificate -n portfolio
+NAME            READY   SECRET          AGE
+portfolio-tls   True    portfolio-tls   ...
+```
+
+Le navigateur affiche « Not secure » : c'est normal avec un certificat autosigné.
+
+![Avertissement certificat autosigné](captures/155-https-avertissement.png)
+
+![Certificat Ready](captures/155-certificate.png)
+
+---
+
+## 30. Santé et disponibilité
+
+### Étapes 156-158 : probes sur `/api/health`
+
+| Probe | Délai initial | Période |
+|---|---|---|
+| readinessProbe | 10 s | 10 s |
+| livenessProbe | 30 s | 20 s |
+
+```
+kubectl describe pod -n portfolio -l app=api | grep -E "Liveness|Readiness"
+```
+
+![Probes](captures/158-probes-hpa.png)
+
+### Étape 159 : requests et limits
+
+![requests, limits et securityContext](captures/159-165-resources-securitycontext.png)
+
+| Conteneur | requests | limits |
+|---|---|---|
+| api | 100m / 128Mi | 500m / 512Mi |
+| frontend | 100m / 128Mi | 500m / 768Mi |
+
+### Étape 160 : HorizontalPodAutoscaler
+
+`hpa.yaml` : API de 1 à 3 réplicas, cible de 70 % de CPU.
+
+```
+kubectl get hpa -n portfolio
+```
+
+---
+
+## 31. Kubernetes Security et RBAC
+
+### Étapes 161-164 : ServiceAccount, Role, RoleBinding
+
+- ServiceAccount `portfolio-sa`, utilisé par l'API et le frontend.
+- Role `portfolio-reader` : uniquement `get` sur le ConfigMap `portfolio-config` (moindre privilège).
+- RoleBinding `portfolio-reader-binding`.
+
+```
+kubectl auth can-i get configmaps/portfolio-config -n portfolio --as=system:serviceaccount:portfolio:portfolio-sa   # yes
+kubectl auth can-i delete configmaps -n portfolio --as=system:serviceaccount:portfolio:portfolio-sa                 # no
+kubectl auth can-i get pods -n portfolio --as=system:serviceaccount:portfolio:portfolio-sa                          # no
+```
+
+![can-i](captures/164-can-i.png)
+
+![ServiceAccount](captures/161-serviceaccount.png)
+
+### Étape 165 : conteneurs sans privilèges élevés
+
+```
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  runAsNonRoot: true
+  runAsUser: 1000
+  seccompProfile:
+    type: RuntimeDefault
+```
+
+### Étape 166 : Pod Security Standards
+
+Labels du namespace `portfolio` :
+
+```
+pod-security.kubernetes.io/enforce: baseline
+pod-security.kubernetes.io/warn: restricted
+```
+
+Pour montrer un refus, j'ai créé un namespace de test `pss-test` avec `enforce=restricted` :
+
+```
+kubectl run bad --image=nginx:1.27 -n pss-test
+Error from server (Forbidden): ... violates PodSecurity "restricted:latest": allowPrivilegeEscalation != false ...
+```
+
+![Pod refusé](captures/166-pss-refus.png)
+
+---
+
+## 32. Network Security
+
+### Étapes 167-169 : NetworkPolicies
+
+Six NetworkPolicies dans `portfolio` : refus par défaut, DNS, `frontend` vers `api`, `api` vers `postgres`, et Traefik vers frontend et API.
+
+Test :
+- pod avec le label `app=frontend` vers l'API : réponse JSON (autorisé) ;
+- pod sans label vers l'API : connexion refusée (bloqué).
+
+(Capture : voir étape 143, qui montre les 6 NetworkPolicies et le test autorisé.)
+
+### Étape 170 : Cilium (non réalisé)
+
+Je n'ai pas réalisé cette étape : elle demande un cluster de test séparé, et ma VM n'a que 3,3 Go de RAM avec un débit réseau très faible vers les registres (voir « Incidents et limites »).
+
+---
+
+## 33. Policy as Code
+
+### Étapes 171-175 : Kyverno
+
+J'ai installé Kyverno 1.20 (chart 3.10.0) avec un réplica par contrôleur. Depuis la version 1.20, Kyverno n'exécute plus les anciennes `ClusterPolicy` : j'ai donc écrit des `ValidatingPolicy` (`policies.kyverno.io/v1`, expressions CEL). Manifests dans `k8s/policies/` :
+
+| Policy | Rôle |
+|---|---|
+| `disallow-latest-tag` | interdit le tag `latest` |
+| `disallow-privileged` | interdit les conteneurs privilégiés |
+| `require-run-as-non-root` | impose `runAsNonRoot` |
+| `require-requests-limits` | impose requests et limits |
+
+Elles tournent en mode `Audit`.
+
+```
+kubectl get validatingpolicy
+```
+
+### Étape 176 : Deployment non conforme refusé
+
+Je passe `disallow-latest-tag` en `Deny` pour le test :
+
+```
+kubectl create deployment bad --image=nginx:latest -n portfolio
+error: failed to create deployment: admission webhook "vpol.validate.kyverno.svc-fail" denied the request: Policy disallow-latest-tag failed: Les images doivent avoir un tag explicite, différent de latest.
+```
+
+![Refus Kyverno](captures/176-kyverno-refus.png)
+
+Rapport de conformité des Deployments existants (mode Audit) :
+
+| Deployment | PASS | FAIL |
+|---|---|---|
+| frontend | 4 | 0 |
+| api | 4 | 0 |
+| postgres | 3 | 1 (`runAsNonRoot`) |
+
+PostgreSQL échoue sur `runAsNonRoot` : c'est un écart connu que je n'ai pas corrigé.
+
+![Rapports](captures/176-policyreport.png)
+
+### Étape 177 : Gatekeeper et Kyverno
+
+Je n'ai pas installé Gatekeeper (RAM limitée) : la comparaison repose sur la documentation.
+
+| Critère | Kyverno | OPA Gatekeeper |
+|---|---|---|
+| Langage des règles | YAML et CEL | Rego |
+| Courbe d'apprentissage | Faible pour qui connaît Kubernetes | Plus élevée |
+| Modèle | Policy directe | ConstraintTemplate puis Constraint |
+| Mutation / génération | Oui | Mutation oui, génération non |
+| Vérification d'images | Oui | Non natif |
+| Usage hors Kubernetes | Non | Oui (OPA généraliste) |
+
+Kyverno est plus rapide à adopter pour des règles Kubernetes ; Gatekeeper convient si l'organisation utilise déjà Rego.
+
+---
+
+## 34. Gestion avancée des secrets
+
+### Étapes 178-179 : Vault
+
+Vault est installé en **mode dev** (stockage en mémoire, token de démonstration) : son contenu disparaît à chaque redémarrage du pod. Ce n'est pas utilisable en production. J'y stocke `secret/portfolio/api` avec une valeur de démonstration.
+
+![Pod Vault](captures/178-vault-pod.png)
+
+![Secret dans Vault](captures/179-vault.png)
+
+
+### Étapes 180-181 : External Secrets Operator
+
+- `SecretStore` `vault-backend` (provider Vault, KV v2, authentification par token).
+- `ExternalSecret` `api-demo` (rafraîchissement toutes les 30 s) qui crée le Secret Kubernetes `api-demo-secret`.
+
+Manifests : `k8s/eso/`.
+
+```
+kubectl get secretstore,externalsecret -n portfolio
+```
+
+### Étape 182 : Secrets Manager de Floci
+
+Floci est un émulateur AWS local (conteneur Docker, port 4566). J'y ai créé le secret `portfolio/floci-demo` avec la CLI AWS (`--endpoint-url http://localhost:4566`). Le `SecretStore` AWS d'External Secrets n'a pas de champ `endpoint` dans cette version : l'adresse de Floci est donnée au contrôleur par la variable d'environnement `AWS_SECRETSMANAGER_ENDPOINT`.
+
+Le `SecretStore` `floci-backend` est `Valid`, l'`ExternalSecret` `floci-demo` est `SecretSynced`, et le Secret `floci-demo-secret` contient la valeur de Floci.
+
+![Floci](captures/182-floci.png)
+
+### Étape 183 : Sealed Secrets
+
+J'ai installé le contrôleur Sealed Secrets (v0.41.2, manifest `controller.yaml`) et la CLI `kubeseal`. Le fichier `k8s/sealed/demo-sealedsecret.yaml` ne contient que des données chiffrées : il peut être versionné dans Git. Le contrôleur crée le Secret `demo-sealed` dans le cluster.
+
+### Étape 184 : rotation d'un secret
+
+Je modifie la valeur dans Vault ; External Secrets met à jour le Secret Kubernetes, puis le fichier monté dans le pod de l'API (`/etc/demo/API_DEMO_KEY`) change sans redémarrage.
+
+```
+AVANT   : valeur-v4
+ROTATION: vault kv put ... (version 6)
+APRES   : valeur-v6-finale
+```
+
+![Rotation](captures/184-rotation.png)
+
+### Comparaison
+
+| Critère | Secret Kubernetes | Vault + External Secrets | Sealed Secrets |
+|---|---|---|---|
+| Stockage | etcd, en base64 | Vault (source de vérité) | Chiffré dans Git |
+| Rotation | Manuelle | Automatique (`refreshInterval`) | Manuelle (re-sceller) |
+| Dans Git | Non | Non (seulement la référence) | Oui |
+| Complexité | Faible | Élevée | Moyenne |
+
+---
+
+## 35. Sécurité Kubernetes continue
+
+### Étapes 185-186 : Trivy Operator
+
+J'ai installé Trivy Operator (chart `aqua/trivy-operator` 0.38.1). Le `kubectl get vulnerabilityreports -A` reste **vide** : la base de vulnérabilités (136 Mio) n'a jamais pu être téléchargée, car le débit vers `mirror.gcr.io` et `ghcr.io` était de quelques Kio/s (échecs par timeout, y compris avec la CLI Trivy dans Docker). Je n'ai donc pas de rapport de vulnérabilités à présenter.
+
+![Trivy Operator](captures/185-trivy-operator.png)
+
+
+### Étape 187 : audit de configuration
+
+Les `ConfigAuditReports` de Trivy Operator n'ont pas besoin de la base de vulnérabilités. J'ai utilisé Trivy plutôt que Kubescape car il était déjà installé.
+
+```
+kubectl get configauditreports -n portfolio -o wide
+```
+
+![ConfigAuditReports](captures/187-configaudit.png)
+
+| Workload | CRITICAL | HIGH | MEDIUM | LOW |
+|---|---|---|---|---|
+| api | 0 | 2 | 0 | 2 |
+| frontend | 0 | 2 | 0 | 2 |
+| postgres | 0 | 2 | 2 | 10 |
+
+Pour l'API, les contrôles échoués sont : contexte de sécurité par défaut, système de fichiers racine non en lecture seule (HIGH), UID et GID inférieurs ou égaux à 10000 (LOW).
+
+
+### Étapes 188-189 : Falco
+
+J'ai installé Falco (chart 9.2.2, Falco 0.45.2) avec le pilote `modern_ebpf`, sans `falcoctl` (réseau lent : seules les règles embarquées sont utilisées) :
+
+```
+helm install falco falcosecurity/falco -n falco --create-namespace \
+  --set driver.kind=modern_ebpf \
+  --set falcoctl.artifact.install.enabled=false \
+  --set falcoctl.artifact.follow.enabled=false
+```
+
+Événement de démonstration : lecture de `/etc/shadow` dans un conteneur.
+
+```
+kubectl run falco-test -n default --rm -i --restart=Never --image=busybox:1.36 -- sh -c 'cat /etc/shadow; sleep 3'
+```
+
+Alerte générée :
+
+```
+Warning Sensitive file opened for reading by non-trusted program | file=/etc/shadow
+process=cat command=cat /etc/shadow container_name=falco-test
+container_image_repository=docker.io/library/busybox container_image_tag=1.36
+k8s_pod_name=falco-test k8s_ns_name=default
+```
+
+![Alerte Falco](captures/189-falco.png)
+
+Falco alerte aussi en continu sur le healthcheck du conteneur Docker `devsecops-floci` : il observe tout l'hôte, pas seulement Kubernetes.
+
+---
+
+## Incidents et limites
+
+Cette activité s'est faite sur une VM de 3,3 Go de RAM. Plusieurs incidents m'ont appris des choses.
+
+1. **Saturation mémoire** : avec K3s, Vault, cert-manager, External Secrets et Kyverno, la VM swappait (load average supérieur à 50) et l'API Kubernetes ne répondait plus. J'ai appris à installer les outils un par un, à mettre à 0 réplica ceux dont je n'avais plus besoin, et à ne jamais vider le swap à chaud.
+2. **Pull d'images lents** : les téléchargements directs par K3s expiraient. J'ai importé les images avec Docker (`docker pull`, `docker save -o`, `k3s ctr images import`), en évitant `k3s-killall.sh` qui avait vidé le cache.
+3. **AppArmor** : après un redémarrage, le profil AppArmor de containerd refusait les signaux entre processus d'un même conteneur (`apparmor="DENIED" operation="signal"` dans `dmesg`). PostgreSQL restait muet et Prisma affichait `kill EACCES`. Contournement sur cette VM de labo : `apparmor=0` dans GRUB. La cause racine n'est pas établie, et ce contournement ne doit pas être reproduit en production.
+4. **PVC PostgreSQL recréé** : pendant le diagnostic précédent, j'ai recréé le volume. Il n'était probablement pas en cause, et l'ancienne base a été perdue (sauvegarde `pgdata-backup.tgz` conservée hors du dépôt).
+5. **Adresse IP de la VM** : l'IP a changé après redémarrage. Les pods ne joignaient plus l'API Kubernetes (cert-manager en `CrashLoopBackOff`). Un redémarrage de K3s a régénéré l'endpoint. Il faut aussi mettre à jour le fichier `hosts` de Windows ; fixer l'IP de la VM éviterait ce problème.
+6. **Base Trivy** : non téléchargeable à ~20 Kio/s (voir étape 186).
+7. **Étapes partielles** : Cilium (170) non réalisé ; Gatekeeper (177) comparé sans installation ; PostgreSQL ne respecte pas `runAsNonRoot`.
