@@ -15,10 +15,12 @@ spec:
       labels:
         app: api
     spec:
+      imagePullSecrets:
+        - name: zot-pull
       containers:
         - name: api
-          image: portfolio-api:1.0
-          imagePullPolicy: IfNotPresent
+          image: 172.19.145.50:30500/portfolio/api:1.0
+          imagePullPolicy: Always
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
