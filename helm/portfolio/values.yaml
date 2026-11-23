@@ -1,0 +1,46 @@
+frontend:
+  image: portfolio-frontend
+  tag: "1.0"
+  replicas: 1
+  port: 3000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
+
+api:
+  image: portfolio-api
+  tag: "1.0"
+  replicas: 1
+  port: 4000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+ingress:
+  enabled: true
+  className: traefik
+  host: portfolio.local
+  tlsSecret: portfolio-tls
+
+config:
+  corsOrigin: "https://portfolio.local"
+  rateLimitMax: "100"
+  apiUrl: "http://api:4000"
+
+frontendService:
+  type: NodePort
+  nodePort: 30080
+
+hpa:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  cpuUtilization: 70

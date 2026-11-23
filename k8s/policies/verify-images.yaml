@@ -1,0 +1,41 @@
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: verify-image-signature
+spec:
+  validationActions:
+    - Deny
+  evaluation:
+    mode: Kubernetes
+  webhookConfiguration:
+    timeoutSeconds: 30
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: portfolio
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  matchImageReferences:
+    - glob: "172.19.145.50:30500/portfolio/*"
+  credentials:
+    secrets:
+      - zot-kyverno
+  attestors:
+    - name: cosign
+      cosign:
+        key:
+          data: |
+            -----BEGIN PUBLIC KEY-----
+            MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAExcbm7VmM/dSVu97wISbJDN7cgOLY
+            xwITKZlA/bnfIMnsu59Hy8zCnylTMNpOJuNvpiseNJmJOIIxLhhRExzipg==
+            -----END PUBLIC KEY-----
+        ctlog:
+          insecureIgnoreSCT: true
+          insecureIgnoreTlog: true
+  validations:
+    - expression: >-
+        images.containers.map(image, verifyImageSignatures(image, [attestors.cosign])).all(e, e > 0)
+      message: "Image refusée : signature Cosign absente ou invalide"
