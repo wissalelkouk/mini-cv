@@ -11,8 +11,10 @@ spec:
     timeoutSeconds: 30
   matchConstraints:
     namespaceSelector:
-      matchLabels:
-        kubernetes.io/metadata.name: portfolio
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values: ["portfolio", "portfolio-staging", "portfolio-production"]
     resourceRules:
       - apiGroups: [""]
         apiVersions: ["v1"]
