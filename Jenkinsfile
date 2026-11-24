@@ -142,13 +142,20 @@ pipeline {
     stage('Signature Cosign') {
       steps {
         withCredentials([
+          usernamePassword(credentialsId: 'zot-admin', usernameVariable: 'ZOT_USER', passwordVariable: 'ZOT_PASS'),
           file(credentialsId: 'cosign-key', variable: 'COSIGN_KEY'),
           string(credentialsId: 'cosign-password', variable: 'COSIGN_PASSWORD')
         ]) {
           sh '''
             export COSIGN_PASSWORD
-            cosign sign --key "$COSIGN_KEY" --yes ${IMAGE_FRONTEND}:${GIT_SHA}
-            cosign sign --key "$COSIGN_KEY" --yes ${IMAGE_API}:${GIT_SHA}
+            for img in ${IMAGE_FRONTEND} ${IMAGE_API}; do
+              DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $img:${GIT_SHA} | cut -d'@' -f2)
+              cosign sign --key "$COSIGN_KEY" \
+                --allow-http-registry \
+                --registry-username "$ZOT_USER" --registry-password "$ZOT_PASS" \
+                --tlog-upload=false --use-signing-config=false --new-bundle-format=false \
+                --yes $img@$DIGEST
+            done
           '''
         }
       }
@@ -161,19 +168,19 @@ pipeline {
             rm -rf /tmp/gitops-repo
             git clone https://${GH_USER}:${GH_TOKEN}@github.com/wissalelkouk/devsecops-portfolio-gitops.git /tmp/gitops-repo
             cd /tmp/gitops-repo
-            
+
             API_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${IMAGE_API}:${GIT_SHA} | cut -d'@' -f2)
             FE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${IMAGE_FRONTEND}:${GIT_SHA} | cut -d'@' -f2)
-            
-            cd overlays/dev
-            kustomize edit set image ${IMAGE_API}=${IMAGE_API}@${API_DIGEST}
-            kustomize edit set image ${IMAGE_FRONTEND}=${IMAGE_FRONTEND}@${FE_DIGEST}
-            
-            cd /tmp/gitops-repo
+
+            F=overlays/dev/kustomization.yaml
+            sed -i "\\|name: ${IMAGE_API}\\$|{n;s|digest: .*|digest: ${API_DIGEST}|}" $F
+            sed -i "\\|name: ${IMAGE_FRONTEND}\\$|{n;s|digest: .*|digest: ${FE_DIGEST}|}" $F
+            git diff --stat
+            git diff --quiet && { echo "Aucun changement de digest"; exit 1; }
+
             git config user.email "jenkins@local"
             git config user.name "Jenkins CI"
-            git add .
-            git commit -m "ci: mise à jour dev avec build ${GIT_SHA}" || echo "Rien à commiter"
+            git commit -am "ci(dev): déployer ${GIT_SHA} (api ${API_DIGEST})"
             git push origin main
           '''
         }
