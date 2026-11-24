@@ -5,6 +5,12 @@ pipeline {
     timeout(time: 120, unit: 'MINUTES')
   }
 
+  environment {
+    REGISTRY = "172.19.145.50:30500"
+    IMAGE_API = "${REGISTRY}/portfolio/api"
+    IMAGE_FRONTEND = "${REGISTRY}/portfolio/frontend"
+  }
+
   stages {
     stage('Checkout') {
       steps {
@@ -97,6 +103,89 @@ pipeline {
             docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v trivy-cache:/root/.cache/ \
               aquasec/trivy:latest image --skip-db-update --timeout 10m --exit-code 1 --severity CRITICAL --ignore-unfixed --no-progress --quiet $img:${GIT_SHA}
           done
+        '''
+      }
+    }
+
+    // ============================================
+    // AJOUTS POUR LA SECTION 41 (Activités 216-218)
+    // ============================================
+
+    stage('SBOM (Syft)') {
+      steps {
+        sh '''
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            anchore/syft:latest devsecops-portfolio:${GIT_SHA} -o spdx-json > sbom-frontend.json
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            anchore/syft:latest devsecops-api:${GIT_SHA} -o spdx-json > sbom-api.json
+        '''
+      }
+      post {
+        always { archiveArtifacts artifacts: 'sbom-*.json', allowEmptyArchive: true }
+      }
+    }
+
+    stage('Push vers Zot') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'zot-admin', usernameVariable: 'ZOT_USER', passwordVariable: 'ZOT_PASS')]) {
+          sh '''
+            echo "$ZOT_PASS" | docker login ${REGISTRY} -u "$ZOT_USER" --password-stdin
+            docker tag devsecops-portfolio:${GIT_SHA} ${IMAGE_FRONTEND}:${GIT_SHA}
+            docker tag devsecops-api:${GIT_SHA}       ${IMAGE_API}:${GIT_SHA}
+            docker push ${IMAGE_FRONTEND}:${GIT_SHA}
+            docker push ${IMAGE_API}:${GIT_SHA}
+          '''
+        }
+      }
+    }
+
+    stage('Signature Cosign') {
+      steps {
+        withCredentials([
+          file(credentialsId: 'cosign-key', variable: 'COSIGN_KEY'),
+          string(credentialsId: 'cosign-password', variable: 'COSIGN_PASSWORD')
+        ]) {
+          sh '''
+            export COSIGN_PASSWORD
+            cosign sign --key "$COSIGN_KEY" --yes ${IMAGE_FRONTEND}:${GIT_SHA}
+            cosign sign --key "$COSIGN_KEY" --yes ${IMAGE_API}:${GIT_SHA}
+          '''
+        }
+      }
+    }
+
+    stage('Mise à jour GitOps') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'github-gitops', usernameVariable: 'GH_USER', passwordVariable: 'GH_TOKEN')]) {
+          sh '''
+            rm -rf /tmp/gitops-repo
+            git clone https://${GH_USER}:${GH_TOKEN}@github.com/wissalelkouk/devsecops-portfolio-gitops.git /tmp/gitops-repo
+            cd /tmp/gitops-repo
+            
+            API_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${IMAGE_API}:${GIT_SHA} | cut -d'@' -f2)
+            FE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${IMAGE_FRONTEND}:${GIT_SHA} | cut -d'@' -f2)
+            
+            cd overlays/dev
+            kustomize edit set image ${IMAGE_API}=${IMAGE_API}@${API_DIGEST}
+            kustomize edit set image ${IMAGE_FRONTEND}=${IMAGE_FRONTEND}@${FE_DIGEST}
+            
+            cd /tmp/gitops-repo
+            git config user.email "jenkins@local"
+            git config user.name "Jenkins CI"
+            git add .
+            git commit -m "ci: mise à jour dev avec build ${GIT_SHA}" || echo "Rien à commiter"
+            git push origin main
+          '''
+        }
+      }
+    }
+
+    stage('Migration DB (PreSync)') {
+      steps {
+        sh '''
+          kubectl -n portfolio delete job db-migration --ignore-not-found
+          kubectl -n portfolio create job db-migration --image=${IMAGE_API}:${GIT_SHA} -- npm run migrate
+          kubectl -n portfolio wait --for=condition=complete job/db-migration --timeout=120s
         '''
       }
     }
