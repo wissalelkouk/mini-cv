@@ -186,15 +186,5 @@ pipeline {
         }
       }
     }
-
-    stage('Migration DB (PreSync)') {
-      steps {
-        sh '''
-          kubectl -n portfolio delete job db-migration --ignore-not-found
-          kubectl -n portfolio create job db-migration --image=${IMAGE_API}:${GIT_SHA} -- npm run migrate
-          kubectl -n portfolio wait --for=condition=complete job/db-migration --timeout=120s
-        '''
-      }
-    }
   }
 }
