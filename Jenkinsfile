@@ -2,7 +2,13 @@ pipeline {
   agent any
   options {
     disableConcurrentBuilds()
-    timeout(time: 120, unit: 'MINUTES')
+    timeout(time: 240, unit: 'MINUTES')
+  }
+
+  environment {
+    REGISTRY = "172.19.145.50:30500"
+    IMAGE_API = "${REGISTRY}/portfolio/api"
+    IMAGE_FRONTEND = "${REGISTRY}/portfolio/frontend"
   }
 
   stages {
@@ -98,6 +104,86 @@ pipeline {
               aquasec/trivy:latest image --skip-db-update --timeout 10m --exit-code 1 --severity CRITICAL --ignore-unfixed --no-progress --quiet $img:${GIT_SHA}
           done
         '''
+      }
+    }
+
+    // ============================================
+    // AJOUTS POUR LA SECTION 41 (Activités 216-218)
+    // ============================================
+
+    stage('SBOM (Syft)') {
+      steps {
+        sh '''
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            anchore/syft:latest devsecops-portfolio:${GIT_SHA} -o spdx-json > sbom-frontend.json
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            anchore/syft:latest devsecops-api:${GIT_SHA} -o spdx-json > sbom-api.json
+        '''
+      }
+      post {
+        always { archiveArtifacts artifacts: 'sbom-*.json', allowEmptyArchive: true }
+      }
+    }
+
+    stage('Push vers Zot') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'zot-admin', usernameVariable: 'ZOT_USER', passwordVariable: 'ZOT_PASS')]) {
+          sh '''
+            echo "$ZOT_PASS" | docker login ${REGISTRY} -u "$ZOT_USER" --password-stdin
+            docker tag devsecops-portfolio:${GIT_SHA} ${IMAGE_FRONTEND}:${GIT_SHA}
+            docker tag devsecops-api:${GIT_SHA}       ${IMAGE_API}:${GIT_SHA}
+            docker push ${IMAGE_FRONTEND}:${GIT_SHA}
+            docker push ${IMAGE_API}:${GIT_SHA}
+          '''
+        }
+      }
+    }
+
+    stage('Signature Cosign') {
+      steps {
+        withCredentials([
+          usernamePassword(credentialsId: 'zot-admin', usernameVariable: 'ZOT_USER', passwordVariable: 'ZOT_PASS'),
+          file(credentialsId: 'cosign-key', variable: 'COSIGN_KEY'),
+          string(credentialsId: 'cosign-password', variable: 'COSIGN_PASSWORD')
+        ]) {
+          sh '''
+            export COSIGN_PASSWORD
+            for img in ${IMAGE_FRONTEND} ${IMAGE_API}; do
+              DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $img:${GIT_SHA} | cut -d'@' -f2)
+              cosign sign --key "$COSIGN_KEY" \
+                --allow-http-registry \
+                --registry-username "$ZOT_USER" --registry-password "$ZOT_PASS" \
+                --tlog-upload=false --use-signing-config=false --new-bundle-format=false \
+                --yes $img@$DIGEST
+            done
+          '''
+        }
+      }
+    }
+
+    stage('Mise à jour GitOps') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'github-gitops', usernameVariable: 'GH_USER', passwordVariable: 'GH_TOKEN')]) {
+          sh '''
+            rm -rf /tmp/gitops-repo
+            git clone https://${GH_USER}:${GH_TOKEN}@github.com/wissalelkouk/devsecops-portfolio-gitops.git /tmp/gitops-repo
+            cd /tmp/gitops-repo
+
+            API_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${IMAGE_API}:${GIT_SHA} | cut -d'@' -f2)
+            FE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${IMAGE_FRONTEND}:${GIT_SHA} | cut -d'@' -f2)
+
+            F=overlays/dev/kustomization.yaml
+            sed -i "\\|name: ${IMAGE_API}\\$|{n;s|digest: .*|digest: ${API_DIGEST}|}" $F
+            sed -i "\\|name: ${IMAGE_FRONTEND}\\$|{n;s|digest: .*|digest: ${FE_DIGEST}|}" $F
+            git diff --stat
+            git diff --quiet && { echo "Aucun changement de digest"; exit 1; }
+
+            git config user.email "jenkins@local"
+            git config user.name "Jenkins CI"
+            git commit -am "ci(dev): déployer ${GIT_SHA} (api ${API_DIGEST})"
+            git push origin main
+          '''
+        }
       }
     }
   }
